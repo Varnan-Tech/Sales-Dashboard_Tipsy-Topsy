@@ -221,10 +221,15 @@ class DataProcessor:
         insights['unique_products'] = self.sales_df['Product Code'].nunique() if self.sales_df is not None else 0
         insights['unique_brands'] = self.sales_df['Brand Code'].nunique() if self.sales_df is not None else 0
 
-        # Date range
+        # Date range - use filtered sales data if available, otherwise use full dataset
+        if self.sales_df is not None and not self.sales_df.empty:
+            date_df = self.sales_df
+        else:
+            date_df = self.df
+
         insights['date_range'] = {
-            'start': self.df['Bill Date'].min().strftime('%d/%m/%Y'),
-            'end': self.df['Bill Date'].max().strftime('%d/%m/%Y')
+            'start': date_df['Bill Date'].min().strftime('%d/%m/%Y'),
+            'end': date_df['Bill Date'].max().strftime('%d/%m/%Y')
         }
 
         # Top performing products
@@ -273,11 +278,14 @@ class DataProcessor:
         insights['daily_sales_trend'] = daily_sales.to_dict('records')
 
         # Size distribution
-        size_analysis = self.sales_df.groupby('Size').agg({
-            'Qty': 'sum'
-        }).reset_index() if self.sales_df is not None else pd.DataFrame()
+        if 'Size' in self.sales_df.columns:
+            size_analysis = self.sales_df.groupby('Size').agg({
+                'Qty': 'sum'
+            }).reset_index() if self.sales_df is not None else pd.DataFrame()
 
-        insights['size_distribution'] = size_analysis.to_dict('records')
+            insights['size_distribution'] = size_analysis.to_dict('records')
+        else:
+            insights['size_distribution'] = []
 
         self.insights_cache = insights
 
@@ -562,9 +570,18 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                                            value=data_processor.df['Bill Date'].max().date() if hasattr(data_processor, 'df') and data_processor.df is not None else datetime.now().date())
 
                 if start_date and end_date:
+                    # Date validation
+                    if start_date > end_date:
+                        st.error("❌ Invalid date range! Start date must be before or equal to end date.")
+                        st.stop()
+
                     # Filter data by date range
                     mask = (data_processor.df['Bill Date'].dt.date >= start_date) & (data_processor.df['Bill Date'].dt.date <= end_date)
                     filtered_df = data_processor.df[mask].copy()
+
+                    if filtered_df.empty:
+                        st.warning(f"⚠️ No data found for the selected date range: {start_date} to {end_date}")
+                        st.stop()
 
                     # Update sales and returns based on filtered data using transaction type
                     data_processor.sales_df = filtered_df[filtered_df['Tran Type'] == 'Sales'].copy()
