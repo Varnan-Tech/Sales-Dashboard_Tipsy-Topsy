@@ -100,6 +100,30 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def format_indian_number(num):
+    """Format number in Indian numbering system with commas"""
+    if num < 0:
+        return '-' + format_indian_number(-num)
+    
+    s = str(int(num))
+    if len(s) <= 3:
+        return s
+    
+    # Last 3 digits
+    result = s[-3:]
+    s = s[:-3]
+    
+    # Add commas every 2 digits from right to left
+    while len(s) > 0:
+        if len(s) <= 2:
+            result = s + ',' + result
+            break
+        else:
+            result = s[-2:] + ',' + result
+            s = s[:-2]
+    
+    return result
+
 class DataProcessor:
     """Unified data processor for vzrm_6.csv file"""
 
@@ -234,9 +258,11 @@ class DataProcessor:
             total_sales_qty = self.sales_df['Qty'].sum() if self.sales_df is not None else 0
             total_return_qty = abs(self.returns_df['Qty'].sum()) if self.returns_df is not None else 0
             insights['return_rate'] = (total_return_qty / total_sales_qty * 100) if total_sales_qty > 0 else 0
+            insights['return_count'] = int(total_return_qty)  # Store the actual count
         else:
             insights['return_analysis'] = []
             insights['return_rate'] = 0
+            insights['return_count'] = 0
 
         # Daily sales pattern
         daily_sales = self.sales_df.groupby('Bill Date').agg({
@@ -283,7 +309,7 @@ class RAGSystem:
             - Total Returns: {insights['total_returns']:,}
             - Total Revenue: ₹{insights['total_revenue']:,.0f}
             - Net Revenue: ₹{insights['net_revenue']:,.0f}
-            - Return Rate: {insights['return_rate']:.2f}%
+            - Return Rate: {insights['return_rate']:.2f}% ({format_indian_number(insights.get('return_count', 0))} returns)
             - Unique Products: {insights['unique_products']}
             - Unique Brands: {insights['unique_brands']}
             - Date Range: {insights['date_range']['start']} to {insights['date_range']['end']}
@@ -569,7 +595,8 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
             st.subheader("📈 Quick Stats")
             st.metric("Total Sales", f"{insights['total_sales']:,}")
             st.metric("Net Revenue", f"₹{insights['net_revenue']:,.0f}")
-            st.metric("Return Rate", f"{insights['return_rate']:.1f}%")
+            return_count = insights.get('return_count', 0)
+            st.metric("Return Rate", f"{insights['return_rate']:.2f}% ({format_indian_number(return_count)} returns)")
             st.metric("Unique Products", f"{insights['unique_products']}")
 
     # Main content
@@ -603,7 +630,8 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
         total_sales_qty = data_processor.sales_df['Qty'].sum() if data_processor.sales_df is not None else 0
         total_return_qty = abs(data_processor.returns_df['Qty'].sum()) if data_processor.returns_df is not None else 0
         actual_return_rate = (total_return_qty / total_sales_qty * 100) if total_sales_qty > 0 else 0
-        st.metric("Overall Return Rate", f"{actual_return_rate:.1f}%")
+        return_count = int(total_return_qty)
+        st.metric("Overall Return Rate", f"{actual_return_rate:.2f}% ({format_indian_number(return_count)} returns)")
 
     # Main Dashboard Tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -1049,7 +1077,7 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
                 returns_summary = f"""
                 **Returns Analysis:**
                 - Total returns: {insights['total_returns']:,}
-                - Return rate: {insights['return_rate']:.2f}%
+                - Return rate: {insights['return_rate']:.2f}% ({format_indian_number(insights.get('return_count', 0))} returns)
                 - Total return value: ₹{insights['total_return_value']:,.0f}
                 - Most returned product: {insights['return_analysis'][0]['Brand Code']} - {insights['return_analysis'][0]['Product Code']} ({insights['return_analysis'][0]['Qty']} returns)
                 """
@@ -1088,7 +1116,7 @@ def create_business_insights(data_processor: DataProcessor):
             ["Total Transactions", f"{perf_insights['key_metrics']['total_transactions']:,}"],
             ["Total Revenue", f"₹{perf_insights['key_metrics']['total_revenue']:,.0f}"],
             ["Net Revenue", f"₹{perf_insights['key_metrics']['net_revenue']:,.0f}"],
-            ["Return Rate", f"{perf_insights['key_metrics']['return_rate']:.1f}%"]
+            ["Return Rate", f"{perf_insights['key_metrics']['return_rate']:.2f}% ({format_indian_number(data_processor.get_insights().get('return_count', 0))} returns)"]
         ], columns=["Metric", "Value"])
         st.dataframe(metrics_df, width='stretch')
 
@@ -1126,7 +1154,9 @@ def create_business_insights(data_processor: DataProcessor):
         if returns_insights['return_analysis']:
             st.write("**Return Analysis:**")
             st.write(f"• Total Returns: {returns_insights['return_analysis']['total_returns']:,}")
-            st.write(f"• Return Rate: {data_processor.get_insights()['return_rate']:.1f}%")
+            return_rate = data_processor.get_insights()['return_rate']
+            return_count = data_processor.get_insights().get('return_count', 0)
+            st.write(f"• Return Rate: {return_rate:.2f}% ({format_indian_number(return_count)} returns)")
             st.write(f"• Average Return Value: ₹{returns_insights['return_analysis']['avg_return_value']:,.0f}")
 
         trend_insights = business_insights['trends']
@@ -1203,7 +1233,7 @@ def create_data_overview(data_processor: DataProcessor):
         st.write("**Business Metrics:**")
         st.write(f"- Total Revenue: ₹{insights['total_revenue']:,.0f}")
         st.write(f"- Net Revenue: ₹{insights['net_revenue']:,.0f}")
-        st.write(f"- Return Rate: {insights['return_rate']:.2f}%")
+        st.write(f"- Return Rate: {insights['return_rate']:.2f}% ({format_indian_number(insights.get('return_count', 0))} returns)")
         st.write(f"- Unique Products: {insights['unique_products']}")
         st.write(f"- Unique Brands: {insights['unique_brands']}")
 
