@@ -732,7 +732,7 @@ def create_performance_analysis(data_processor: DataProcessor):
         top_n_fastest = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=10,
+            index=1,  # 10 is at index 1
             key="fastest_selling_top_n"
         )
 
@@ -776,7 +776,7 @@ def create_performance_analysis(data_processor: DataProcessor):
         top_n_best = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=10,
+            index=1,  # 10 is at index 1
             key="best_selling_top_n"
         )
 
@@ -842,7 +842,7 @@ def create_performance_analysis(data_processor: DataProcessor):
         bottom_n = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=5,
+            index=0,  # 5 is at index 0
             key="bottom_products_n"
         )
 
@@ -996,7 +996,7 @@ def create_brand_analysis(data_processor: DataProcessor):
             top_n_reliable = st.selectbox(
                 "Select number of brands to display:",
                 options=[5, 10, 15, 20, 25],
-                value=10,
+                index=1,  # 10 is at index 1
                 key="reliable_brands_n"
             )
 
@@ -1020,7 +1020,7 @@ def create_product_analysis(data_processor: DataProcessor):
         top_n_qty = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=10,
+            index=1,  # 10 is at index 1
             key="top_products_qty_n"
         )
 
@@ -1039,7 +1039,7 @@ def create_product_analysis(data_processor: DataProcessor):
         top_n_value = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=10,
+            index=1,  # 10 is at index 1
             key="top_products_value_n"
         )
 
@@ -1070,7 +1070,7 @@ def create_returns_analysis(data_processor: DataProcessor):
         top_n_returns_qty = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=10,
+            index=1,  # 10 is at index 1
             key="returns_qty_n"
         )
 
@@ -1088,7 +1088,7 @@ def create_returns_analysis(data_processor: DataProcessor):
         top_n_returns_value = st.selectbox(
             "Select number of products to display:",
             options=[5, 10, 15, 20, 25, 50],
-            value=10,
+            index=1,  # 10 is at index 1
             key="returns_value_n"
         )
 
