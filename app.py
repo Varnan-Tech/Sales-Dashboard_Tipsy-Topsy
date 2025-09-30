@@ -104,15 +104,15 @@ def format_indian_number(num):
     """Format number in Indian numbering system with commas"""
     if num < 0:
         return '-' + format_indian_number(-num)
-    
+
     s = str(int(num))
     if len(s) <= 3:
         return s
-    
+
     # Last 3 digits
     result = s[-3:]
     s = s[:-3]
-    
+
     # Add commas every 2 digits from right to left
     while len(s) > 0:
         if len(s) <= 2:
@@ -121,8 +121,52 @@ def format_indian_number(num):
         else:
             result = s[-2:] + ',' + result
             s = s[:-2]
-    
+
     return result
+
+# Brand code to brand name mapping
+BRAND_NAME_MAPPING = {
+    'CELIO': 'Celio',
+    'SPYKAR': 'Spykar',
+    'IT MENS': 'IT Mens',
+    'KAAPUS': 'Kaapus',
+    'BH': 'BH',
+    'JACK&JONES': 'Jack & Jones',
+    'NUMEROUNO MENS': 'Numero Uno Mens',
+    'FLYING MACHINE': 'Flying Machine',
+    'US POLO': 'US Polo',
+    'MUFTI': 'Mufti',
+    'ARROW N': 'Arrow New York',
+    'ARROW': 'Arrow',
+    'ARROW SPORTS': 'Arrow Sports',
+    'ROOKIES': 'Rookies',
+    'BENETTON': 'Benetton',
+    'VOI JEANS': 'VOI Jeans',
+    'LINEN CLUB': 'Linen Club',
+    'JOCKEY': 'Jockey',
+    'BLACK BERRY': 'Black Berry',
+    'LEVIS': 'Levis',
+    'RARE RABBIT': 'Rare Rabbit',
+    'CFS': 'CFS',
+    'DENVER': 'Denver',
+    'JAGUAR': 'Jaguar',
+    'FAHRENHEIT': 'Fahrenheit',
+    'VH': 'VH',
+    'LC': 'LC',
+    'BRUT': 'Brut',
+    'INDIAN TERRAIN': 'Indian Terrain',
+    'LEBUCK': 'Lebuck'
+}
+
+def get_brand_name(brand_code):
+    """Get brand name from brand code"""
+    if pd.isna(brand_code):
+        return 'Unknown'
+    brand_code_str = str(brand_code).strip()
+    # If it looks like a product code (starts with numbers), use generic name
+    if brand_code_str.replace('P', '').replace('0', '').replace('1', '').replace('2', '').replace('3', '').replace('4', '').replace('5', '').replace('6', '').replace('7', '').replace('8', '').replace('9', '') == '':
+        return 'Generic Brand'
+    return BRAND_NAME_MAPPING.get(brand_code_str, brand_code_str)
 
 class DataProcessor:
     """Unified data processor for vzrm_6.csv file"""
@@ -606,15 +650,6 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                         context = rag_system.prepare_documents(data_processor)
                         st.success("🤖 AI Assistant ready!")
 
-        # Quick stats
-        if hasattr(data_processor, 'insights_cache') and data_processor.insights_cache:
-            insights = data_processor.insights_cache
-            st.subheader("📈 Quick Stats")
-            st.metric("Total Sales", f"{insights['total_sales']:,}")
-            st.metric("Net Revenue", f"₹{insights['net_revenue']:,.0f}")
-            return_count = insights.get('return_count', 0)
-            st.metric("Return Rate", f"{insights['return_rate']:.2f}% ({format_indian_number(return_count)} returns)")
-            st.metric("Unique Products", f"{insights['unique_products']}")
 
     # Main content
     if not hasattr(data_processor, 'df') or data_processor.df is None:
@@ -692,6 +727,15 @@ def create_performance_analysis(data_processor: DataProcessor):
 
     with col1:
         st.subheader("🚀 Fastest Selling Products (Qty/Day)")
+
+        # Configurable top N selector
+        top_n_fastest = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=10,
+            key="fastest_selling_top_n"
+        )
+
         # Calculate daily rates using sales data
         sales_df = data_processor.sales_df if data_processor.sales_df is not None else pd.DataFrame()
         if not sales_df.empty:
@@ -708,25 +752,34 @@ def create_performance_analysis(data_processor: DataProcessor):
             daily_rates = daily_rates.sort_values('Qty_Per_Day', ascending=False)
 
             if not daily_rates.empty:
-                top_fastest = daily_rates.head(10)
+                top_fastest = daily_rates.head(top_n_fastest)
 
                 fig_fastest = px.bar(
                     top_fastest,
                     x='Qty_Per_Day',
                     y='Brand_Product',
-                    title="Top 10 Fastest Selling Products",
+                    title=f"Top {top_n_fastest} Fastest Selling Products",
                     color='Qty_Per_Day',
                     color_continuous_scale='viridis',
                     orientation='h'
                 )
-                fig_fastest.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
+                fig_fastest.update_layout(height=max(400, top_n_fastest * 15), yaxis={'categoryorder': 'total ascending'})
                 st.plotly_chart(fig_fastest, width='stretch')
 
                 # Display table
-                st.dataframe(top_fastest[['Brand Code', 'Product Code', 'Qty', 'Qty_Per_Day']].head(5))
+                st.dataframe(top_fastest[['Brand Code', 'Product Code', 'Qty', 'Qty_Per_Day']].head(min(10, top_n_fastest)))
 
     with col2:
         st.subheader("🥇 Best Selling Products (Total Qty)")
+
+        # Configurable top N selector
+        top_n_best = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=10,
+            key="best_selling_top_n"
+        )
+
         if not data_processor.df.empty:
             # Calculate net data similar to new.py
             sales_only = data_processor.sales_df if data_processor.sales_df is not None else pd.DataFrame()
@@ -763,41 +816,50 @@ def create_performance_analysis(data_processor: DataProcessor):
                     net_data['Return_Rate'] = 0
 
                 if not net_data.empty:
-                    best_selling = net_data.nlargest(10, 'Net_Qty')
+                    best_selling = net_data.nlargest(top_n_best, 'Net_Qty')
                     best_selling['Brand_Product'] = best_selling['Brand Code'] + ' - ' + best_selling['Product Code']
 
                     fig_best = px.bar(
                         best_selling,
                         x='Net_Qty',
                         y='Brand_Product',
-                        title="Top 10 Best Selling Products",
+                        title=f"Top {top_n_best} Best Selling Products",
                         color='Net_Qty',
                         color_continuous_scale='plasma',
                         orientation='h'
                     )
-                    fig_best.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
+                    fig_best.update_layout(height=max(400, top_n_best * 15), yaxis={'categoryorder': 'total ascending'})
                     st.plotly_chart(fig_best, width='stretch')
 
                     # Display table
-                    st.dataframe(best_selling[['Brand Code', 'Product Code', 'Net_Qty', 'Return_Rate']].head(5))
+                    st.dataframe(best_selling[['Brand Code', 'Product Code', 'Net_Qty', 'Return_Rate']].head(min(10, top_n_best)))
 
     # Bottom performers section
     if not sales_only.empty:
-        st.subheader("⚠️ Bottom 5 Products (Need Attention)")
+        st.subheader("⚠️ Bottom Products (Need Attention)")
+
+        # Configurable bottom N selector
+        bottom_n = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=5,
+            key="bottom_products_n"
+        )
+
         if not net_data.empty:
-            bottom_products = net_data.nsmallest(5, 'Net_Qty')
+            bottom_products = net_data.nsmallest(bottom_n, 'Net_Qty')
             bottom_products['Brand_Product'] = bottom_products['Brand Code'] + ' - ' + bottom_products['Product Code']
 
             fig_bottom = px.bar(
                 bottom_products,
                 x='Net_Qty',
                 y='Brand_Product',
-                title="Bottom 5 Products by Net Quantity",
+                title=f"Bottom {bottom_n} Products by Net Quantity",
                 color='Net_Qty',
                 color_continuous_scale='reds',
                 orientation='h'
             )
-            fig_bottom.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+            fig_bottom.update_layout(height=max(400, bottom_n * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig_bottom, width='stretch')
 
 def create_brand_analysis(data_processor: DataProcessor):
@@ -930,9 +992,18 @@ def create_brand_analysis(data_processor: DataProcessor):
 
     with col2:
         if not brand_analysis.empty:
+            # Configurable top N selector for reliable brands
+            top_n_reliable = st.selectbox(
+                "Select number of brands to display:",
+                options=[5, 10, 15, 20, 25],
+                value=10,
+                key="reliable_brands_n"
+            )
+
             reliable_brands = brand_analysis.sort_values('Reliability_Score', ascending=False)
+            reliable_brands['Brand Name'] = reliable_brands['Brand Code'].apply(get_brand_name)
             st.subheader("🌟 Most Reliable Brands")
-            st.dataframe(reliable_brands[['Brand Code', 'Net_Qty', 'Return_Rate', 'CV', 'Reliability_Score']].head(10))
+            st.dataframe(reliable_brands[['Brand Name', 'Brand Code', 'Net_Qty', 'Return_Rate', 'CV', 'Reliability_Score']].head(top_n_reliable))
 
 def create_product_analysis(data_processor: DataProcessor):
     """Create product analysis tab"""
@@ -944,20 +1015,40 @@ def create_product_analysis(data_processor: DataProcessor):
 
     with col1:
         st.subheader("🥇 Top Products by Quantity")
+
+        # Configurable top N selector
+        top_n_qty = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=10,
+            key="top_products_qty_n"
+        )
+
         if insights['top_products_qty']:
             products_df = pd.DataFrame(insights['top_products_qty'])
             products_df['Brand_Product'] = products_df['Brand Code'] + ' - ' + products_df['Product Code']
-            fig = px.bar(products_df, x='Qty', y='Brand_Product', orientation='h', title="Top Products by Quantity")
-            fig.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+            top_products_qty = products_df.head(top_n_qty)
+            fig = px.bar(top_products_qty, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_qty} Products by Quantity")
+            fig.update_layout(height=max(400, top_n_qty * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, width='stretch')
 
     with col2:
         st.subheader("💎 Top Products by Revenue")
+
+        # Configurable top N selector
+        top_n_value = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=10,
+            key="top_products_value_n"
+        )
+
         if insights['top_products_value']:
             products_value_df = pd.DataFrame(insights['top_products_value'])
             products_value_df['Brand_Product'] = products_value_df['Brand Code'] + ' - ' + products_value_df['Product Code']
-            fig = px.bar(products_value_df, x='Value', y='Brand_Product', orientation='h', title="Top Products by Revenue")
-            fig.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+            top_products_value = products_value_df.head(top_n_value)
+            fig = px.bar(top_products_value, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_value} Products by Revenue")
+            fig.update_layout(height=max(400, top_n_value * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, width='stretch')
 
 def create_returns_analysis(data_processor: DataProcessor):
@@ -974,18 +1065,36 @@ def create_returns_analysis(data_processor: DataProcessor):
 
     with col1:
         st.subheader("📦 Products with Most Returns")
+
+        # Configurable top N selector
+        top_n_returns_qty = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=10,
+            key="returns_qty_n"
+        )
+
         returns_df = pd.DataFrame(insights['return_analysis'])
         returns_df['Brand_Product'] = returns_df['Brand Code'] + ' - ' + returns_df['Product Code']
-        top_returns = returns_df.nlargest(10, 'Qty')
-        fig = px.bar(top_returns, x='Qty', y='Brand_Product', orientation='h', title="Products with Most Returns")
-        fig.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+        top_returns = returns_df.nlargest(top_n_returns_qty, 'Qty')
+        fig = px.bar(top_returns, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_returns_qty} Products with Most Returns")
+        fig.update_layout(height=max(400, top_n_returns_qty * 15), yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig, width='stretch')
 
     with col2:
         st.subheader("💸 Return Value Analysis")
-        top_returns_value = returns_df.nlargest(10, 'Value')
-        fig = px.bar(top_returns_value, x='Value', y='Brand_Product', orientation='h', title="Products with Highest Return Value")
-        fig.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+
+        # Configurable top N selector
+        top_n_returns_value = st.selectbox(
+            "Select number of products to display:",
+            options=[5, 10, 15, 20, 25, 50],
+            value=10,
+            key="returns_value_n"
+        )
+
+        top_returns_value = returns_df.nlargest(top_n_returns_value, 'Value')
+        fig = px.bar(top_returns_value, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_returns_value} Products with Highest Return Value")
+        fig.update_layout(height=max(400, top_n_returns_value * 15), yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig, width='stretch')
 
 def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
@@ -1254,9 +1363,19 @@ def create_data_overview(data_processor: DataProcessor):
         st.write(f"- Unique Products: {insights['unique_products']}")
         st.write(f"- Unique Brands: {insights['unique_brands']}")
 
-    # Sample data
+    # Sample data - use filtered data if available
     st.subheader("🔍 Sample Data")
-    st.dataframe(data_processor.df.head(20))
+    if data_processor.sales_df is not None and not data_processor.sales_df.empty:
+        # Show sample of filtered data
+        sample_data = data_processor.sales_df.head(10)
+        if data_processor.returns_df is not None and not data_processor.returns_df.empty:
+            returns_sample = data_processor.returns_df.head(5)
+            sample_data = pd.concat([sample_data, returns_sample])
+        st.dataframe(sample_data)
+        st.caption("Showing sample of filtered data based on selected date range")
+    else:
+        # Show sample of full data
+        st.dataframe(data_processor.df.head(20))
 
     # Download options
     st.subheader("💾 Export Data")
@@ -1268,13 +1387,25 @@ def create_data_overview(data_processor: DataProcessor):
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        csv_data = convert_df(data_processor.df)
-        st.download_button(
-            label="📄 Download Full Dataset",
-            data=csv_data,
-            file_name='tipsy_topsy_full_data.csv',
-            mime='text/csv',
-        )
+        if data_processor.sales_df is not None and not data_processor.sales_df.empty:
+            # Show filtered data download options
+            filtered_data = pd.concat([data_processor.sales_df, data_processor.returns_df]) if data_processor.returns_df is not None and not data_processor.returns_df.empty else data_processor.sales_df
+            csv_filtered = convert_df(filtered_data)
+            st.download_button(
+                label="📄 Download Filtered Dataset",
+                data=csv_filtered,
+                file_name='tipsy_topsy_filtered_data.csv',
+                mime='text/csv',
+            )
+        else:
+            # Show full data download
+            csv_data = convert_df(data_processor.df)
+            st.download_button(
+                label="📄 Download Full Dataset",
+                data=csv_data,
+                file_name='tipsy_topsy_full_data.csv',
+                mime='text/csv',
+            )
 
     with col2:
         if data_processor.sales_df is not None:
