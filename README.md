@@ -5,9 +5,10 @@ A comprehensive business intelligence dashboard for clothing store analytics wit
 ## 🚀 Features
 
 ### ✅ Unified Data Processing
+- **Multiple File Format Support**: Works with CSV (.csv), Excel (.xlsx), and Excel Binary (.xlsb) files
 - **Single File Input**: Works with your existing `vzrm_6.csv` file (no need for separate sales/returns files)
 - **Automatic Data Cleaning**: Handles mixed sales and returns data automatically
-- **Smart Column Processing**: Converts dates, numbers, and handles edge cases
+- **Smart Column Processing**: Converts dates, numbers, and handles edge cases across all formats
 
 ### 📊 Advanced Analytics
 - **Performance Analysis**: Track sales trends, top performers, and growth patterns
@@ -32,7 +33,7 @@ A comprehensive business intelligence dashboard for clothing store analytics wit
 
 ### Prerequisites
 - Python 3.8+
-- `vzrm_6.csv` file (your existing sales data file)
+- Data file: `vzrm_6.csv`, `.xlsx`, or `.xlsb` (your existing sales data file)
 - OpenRouter API key (for AI features)
 
 ### Installation
@@ -41,6 +42,8 @@ A comprehensive business intelligence dashboard for clothing store analytics wit
 ```bash
 pip install -r requirements.txt
 ```
+
+**Note**: The requirements include packages for Excel file support (`openpyxl` for .xlsx, `pyxlsb` for .xlsb files).
 
 2. **Verify Installation**
 ```bash
@@ -58,8 +61,9 @@ streamlit run app.py
 
 2. **Upload Your Data**
    - Open the dashboard in your browser
-   - Upload your `vzrm_6.csv` file in the sidebar
+   - Upload your data file in the sidebar (supports CSV, XLSX, XLSB)
    - The system will automatically process mixed sales/returns data
+   - For Excel files, ensure the first sheet contains your data
 
 3. **Enable AI Features** (Optional)
    - Get an API key from [OpenRouter](https://openrouter.ai/)

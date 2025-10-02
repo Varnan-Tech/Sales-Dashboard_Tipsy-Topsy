@@ -244,33 +244,49 @@ class InsightsGenerator:
                 'recommendation': 'Stock more of popular sizes and consider size-specific promotions'
             }
 
-        # Purchase frequency analysis
+        # Size demand analysis (replacing purchase patterns)
         if hasattr(self.data_processor, 'sales_df') and self.data_processor.sales_df is not None:
-            customer_analysis = self.data_processor.sales_df.groupby('Customer Code').agg({
-                'Bill No': 'nunique',
+            # Analyze size demand patterns
+            size_demand = self.data_processor.sales_df.groupby(['Brand Code', 'Size']).agg({
+                'Qty': 'sum',
                 'Value': 'sum',
-                'Qty': 'sum'
-            })
+                'Bill No': 'nunique'  # Number of transactions
+            }).reset_index()
 
-            repeat_customers = len(customer_analysis[customer_analysis['Bill No'] > 1])
+            # Filter out invalid sizes
+            size_demand = size_demand[
+                size_demand['Size'].notna() &
+                (size_demand['Size'] != '') &
+                (~size_demand['Size'].str.lower().isin(['size', '']))
+            ]
 
-            customer_insights['purchase_patterns'] = {
-                'repeat_customers': repeat_customers,
-                'repeat_customer_rate': round(repeat_customers / len(customer_analysis) * 100, 1) if len(customer_analysis) > 0 else 0,
-                'avg_purchase_value': round(customer_analysis['Value'].mean(), 0) if len(customer_analysis) > 0 else 0
+            # Calculate demand metrics for each brand-size combination
+            size_demand['Demand_Score'] = size_demand['Qty'] * size_demand['Bill No']  # Higher score for frequently bought sizes
+
+            # Get top demanded sizes overall
+            top_sizes = size_demand.nlargest(10, 'Demand_Score')
+
+            customer_insights['size_demand'] = {
+                'top_sizes': top_sizes[['Brand Code', 'Size', 'Qty', 'Demand_Score']].to_dict('records'),
+                'size_distribution': size_demand.groupby('Size')['Qty'].sum().to_dict(),
+                'brand_size_preferences': size_demand.groupby(['Brand Code', 'Size'])['Qty'].sum().reset_index()
+                    .sort_values(['Brand Code', 'Qty'], ascending=[True, False])
+                    .groupby('Brand Code').head(3).to_dict('records')
             }
 
-            # Generate recommendations based on customer behavior
-            if customer_insights['purchase_patterns']['repeat_customer_rate'] < 20:
+            # Generate recommendations based on size demand
+            if not size_demand.empty:
+                most_demanding_size = size_demand.loc[size_demand['Demand_Score'].idxmax()]
+
                 customer_insights['customer_recommendations'].append({
-                    'priority': 'Medium',
-                    'issue': 'Low repeat customer rate',
-                    'recommendation': 'Implement customer retention strategies like loyalty programs or personalized offers',
+                    'priority': 'High',
+                    'issue': 'Size demand optimization',
+                    'recommendation': f'Increase stock of {most_demanding_size["Brand Code"]} size {most_demanding_size["Size"]} - highest demand item',
                     'action_items': [
-                        'Create loyalty program',
-                        'Send personalized recommendations',
-                        'Offer exclusive deals for repeat customers',
-                        'Improve post-purchase communication'
+                        'Review inventory levels for popular sizes',
+                        'Consider size-specific promotions',
+                        'Analyze size charts for accuracy',
+                        'Monitor size return patterns'
                     ]
                 })
 
