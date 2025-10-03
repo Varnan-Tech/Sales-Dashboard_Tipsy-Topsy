@@ -246,13 +246,11 @@ class DataProcessor:
                 try:
                     # Try UTF-8 first
                     self.df = pd.read_csv(uploaded_file, encoding='utf-8', low_memory=False)
-                    st.info(f"✅ Successfully loaded {len(self.df):,} rows from CSV file")
                 except UnicodeDecodeError:
                     # Try with different encoding
                     try:
                         uploaded_file.seek(0)  # Reset file pointer
                         self.df = pd.read_csv(uploaded_file, encoding='latin1', low_memory=False)
-                        st.info(f"✅ Successfully loaded {len(self.df):,} rows from CSV file (using latin1 encoding)")
                     except Exception as e:
                         st.error(f"❌ Error reading CSV file: {str(e)}")
                         st.info("💡 Try saving your CSV file with UTF-8 encoding, or use Excel format.")
@@ -309,12 +307,11 @@ class DataProcessor:
                 st.error(f"❌ Unsupported file type: {file_extension}. Please upload CSV, XLSX, or XLSB files.")
                 return False
 
-            # Debug: Log initial row count
-            initial_rows = len(self.df)
-            st.info(f"📊 Initial data loaded: {initial_rows:,} rows")
-
             # Clean column names
             self.df.columns = self.df.columns.str.strip()
+
+            # Store initial row count for logging
+            initial_rows = len(self.df)
 
             # Ensure consistent column naming (handle case differences)
             column_mapping = {
@@ -399,17 +396,11 @@ class DataProcessor:
 
             if valid_dates_count == 0:
                 st.warning("⚠️ No valid dates found in data. All rows retained but date-based analysis will be limited.")
-                st.info(f"📊 All {total_rows:,} rows retained for analysis")
             elif valid_dates_count < total_rows:
-                st.info(f"📊 Date parsing: {valid_dates_count:,} valid dates out of {total_rows:,} total rows")
-                st.info("✅ All rows retained - using only valid dates for date-based analysis")
-                st.info("💡 Supported date formats: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY")
                 # Show sample of invalid dates for debugging
                 invalid_dates = self.df[self.df['Bill Date'].isna()]['Bill Date'].head(5)
                 if not invalid_dates.empty:
-                    st.info(f"💡 Sample invalid dates: {invalid_dates.tolist()}")
-            else:
-                st.info(f"📊 All {total_rows:,} rows have valid dates")
+                    pass  # Keep the logic but remove the message
 
             # Remove summary rows and obviously invalid data
             if 'Tran Type' in self.df.columns:
@@ -426,8 +417,6 @@ class DataProcessor:
 
                 # Also keep all brand codes - don't filter out rows based on brand code either
                 # Preserve all transaction data as requested by user
-
-                st.success(f"✅ Final data ready: {len(self.df):,} rows processed successfully")
 
             # Convert numeric columns - handle the concatenated values properly
             numeric_columns = ['Cost', 'MRP', 'Doc Rate', 'Qty', 'Value', 'Tax', 'Item - Discount', 'Bill - Discount', 'Total - Discount']
@@ -523,7 +512,6 @@ class DataProcessor:
                 'start': valid_dates_df['Bill Date'].min().strftime('%d/%m/%Y'),
                 'end': valid_dates_df['Bill Date'].max().strftime('%d/%m/%Y')
             }
-            st.info(f"📊 Date range calculated from {valid_count:,} valid dates out of {total_count:,} total rows")
         else:
             # If no valid dates, use placeholder
             insights['date_range'] = {
@@ -578,7 +566,6 @@ class DataProcessor:
                     'Value': 'sum'
                 }).reset_index()
                 insights['daily_sales_trend'] = daily_sales.to_dict('records')
-                st.info(f"📊 Daily sales trend calculated from {len(daily_sales)} days of valid data")
             else:
                 insights['daily_sales_trend'] = []
                 st.warning("⚠️ No valid dates found for daily sales trend analysis")
@@ -1010,14 +997,12 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
 
         if uploaded_file is not None:
             if data_processor.load_and_process_data(uploaded_file):
-                st.success("✅ Data loaded successfully!")
 
                 # Get valid date range for defaults (after data is loaded and parsed)
                 valid_dates = data_processor.df['Bill Date'].dropna() if hasattr(data_processor, 'df') and data_processor.df is not None else pd.Series()
                 if not valid_dates.empty:
                     default_start = valid_dates.min().date()
                     default_end = valid_dates.max().date()
-                    st.info(f"📅 Data date range: {default_start} to {default_end} ({len(valid_dates)} valid dates out of {len(data_processor.df)} total records)")
                 else:
                     default_start = default_end = datetime.now().date()
                     st.warning("⚠️ No valid dates found in data!")
@@ -1034,7 +1019,7 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                 full_date_range = (start_date == default_start) and (end_date == default_end)
 
                 if full_date_range:
-                    st.info("📊 Showing complete dataset (no date filtering applied)")
+                    pass  # No message needed
                 else:
                     st.info(f"🔄 Date filtering active: {start_date} to {end_date}")
 
@@ -1086,7 +1071,6 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                     st.success(f"📊 Data filtered: {len(filtered_df)} transactions from {start_date} to {end_date}")
                 else:
                     # No date filtering applied - use all data
-                    st.info("📊 Showing all data (no date filter applied)")
                     data_processor.sales_df = data_processor.df[data_processor.df['Tran Type'] == 'Sales'].copy()
                     data_processor.returns_df = data_processor.df[data_processor.df['Tran Type'] == 'Return'].copy()
 
@@ -1176,7 +1160,6 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
     # Key Metrics Row (showing current filtered dataset totals)
     insights = data_processor.get_insights()
 
-    st.info("📊 **Header metrics update with date filters** | Showing current filtered dataset totals")
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -1335,8 +1318,6 @@ def create_performance_analysis(data_processor: DataProcessor):
 
     if filter_summary:
         st.info(f"📊 Applied Filters: {', '.join(filter_summary)}")
-    else:
-        st.info("📊 Showing all data")
 
     # Configurable top N selector for all graphs
     top_n = st.selectbox(
@@ -2139,11 +2120,18 @@ def create_business_insights(data_processor: DataProcessor):
 
         # Key metrics in a nice format
         st.write("**Key Metrics:**")
+
+        # Ensure all values are valid numbers before creating DataFrame
+        total_transactions = perf_insights['key_metrics'].get('total_transactions', 0) or 0
+        total_revenue = perf_insights['key_metrics'].get('total_revenue', 0) or 0
+        net_revenue = perf_insights['key_metrics'].get('net_revenue', 0) or 0
+        return_rate = perf_insights['key_metrics'].get('return_rate', 0) or 0
+
         metrics_df = pd.DataFrame([
-            ["Total Transactions", f"{perf_insights['key_metrics']['total_transactions']:,}"],
-            ["Total Revenue", f"₹{perf_insights['key_metrics']['total_revenue']:,.0f}"],
-            ["Net Revenue", f"₹{perf_insights['key_metrics']['net_revenue']:,.0f}"],
-            ["Return Rate", f"{perf_insights['key_metrics']['return_rate']:.2f}% ({format_indian_number(data_processor.get_insights().get('return_count', 0))} returns)"]
+            ["Total Transactions", f"{total_transactions:,}"],
+            ["Total Revenue", f"₹{total_revenue:,.0f}"],
+            ["Net Revenue", f"₹{net_revenue:,.0f}"],
+            ["Return Rate", f"{return_rate:.2f}% ({format_indian_number(data_processor.get_insights().get('return_count', 0))} returns)"]
         ], columns=["Metric", "Value"])
         st.dataframe(metrics_df, width='stretch')
 
