@@ -1442,7 +1442,7 @@ def create_performance_analysis(data_processor: DataProcessor):
             selector=dict(name="Best_Net_Qty")
         )
 
-        st.plotly_chart(fig_combined, width='stretch')
+        st.plotly_chart(fig_combined, use_container_width=True)
 
     # Bottom performers section
     if not net_data.empty:
@@ -1468,7 +1468,7 @@ def create_performance_analysis(data_processor: DataProcessor):
             orientation='h'
         )
         fig_bottom.update_layout(height=max(400, bottom_n * 15), yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_bottom, width='stretch')
+        st.plotly_chart(fig_bottom, use_container_width=True)
 
     # Size and Color Analysis
     st.markdown("**Size & Color Analysis**")
@@ -1501,7 +1501,7 @@ def create_performance_analysis(data_processor: DataProcessor):
                     orientation='h'
                 )
                 fig_sizes.update_layout(height=max(400, len(size_analysis) * 15), yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig_sizes, width='stretch')
+                st.plotly_chart(fig_sizes, use_container_width=True)
 
     with col4:
         st.markdown("**Color Analysis**")
@@ -1533,7 +1533,7 @@ def create_performance_analysis(data_processor: DataProcessor):
                     hover_data=['Brand Name', 'Brand Code']
                 )
                 fig_colors.update_layout(height=max(400, len(color_analysis) * 15), yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig_colors, width='stretch')
+                st.plotly_chart(fig_colors, use_container_width=True)
 
                 # Show detailed color-brand breakdown
                 st.write("**Color-Brand Breakdown:**")
@@ -1610,7 +1610,7 @@ def create_performance_analysis(data_processor: DataProcessor):
                 color_continuous_scale='viridis'
             )
             fig_categories.update_layout(height=400)
-            st.plotly_chart(fig_categories, width='stretch')
+            st.plotly_chart(fig_categories, use_container_width=True)
 
             # Show category breakdown table
             display_df = category_df.copy()
@@ -1723,7 +1723,7 @@ def create_brand_analysis(data_processor: DataProcessor):
                     color_continuous_scale='blues'
                 )
                 fig_brand_qty.update_layout(height=400)
-                st.plotly_chart(fig_brand_qty, width='stretch')
+                st.plotly_chart(fig_brand_qty, use_container_width=True)
 
     with col2:
         st.subheader("💰 Brand Performance by Revenue")
@@ -1737,7 +1737,7 @@ def create_brand_analysis(data_processor: DataProcessor):
                 color_continuous_scale='greens'
             )
             fig_brand_rev.update_layout(height=400)
-            st.plotly_chart(fig_brand_rev, width='stretch')
+            st.plotly_chart(fig_brand_rev, use_container_width=True)
 
     # Most Reliable Brands
     if not brand_analysis.empty:
@@ -1806,7 +1806,7 @@ def create_product_analysis(data_processor: DataProcessor):
             top_products_qty_display = products_df.head(top_n_qty)
             fig = px.bar(top_products_qty_display, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_qty} Products by Quantity")
             fig.update_layout(height=max(400, top_n_qty * 15), yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
     with col2:
         st.subheader("💎 Top Products by Revenue")
@@ -1825,7 +1825,7 @@ def create_product_analysis(data_processor: DataProcessor):
             top_products_value_display = products_value_df.head(top_n_value)
             fig = px.bar(top_products_value_display, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_value} Products by Revenue")
             fig.update_layout(height=max(400, top_n_value * 15), yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
 def create_price_discount_analysis(data_processor: DataProcessor):
     """Create price and discount analysis tab"""
@@ -1867,7 +1867,7 @@ def create_price_discount_analysis(data_processor: DataProcessor):
             labels={'x': 'Price Range', 'y': 'Number of Items Sold'}
         )
         fig_price_dist.update_layout(height=400)
-        st.plotly_chart(fig_price_dist, width='stretch')
+        st.plotly_chart(fig_price_dist, use_container_width=True)
 
         # Key metrics
         st.write("**Key Price Metrics:**")
@@ -1901,7 +1901,7 @@ def create_price_discount_analysis(data_processor: DataProcessor):
             color_continuous_scale='oranges'
         )
         fig_discount.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_discount, width='stretch')
+        st.plotly_chart(fig_discount, use_container_width=True)
 
         # Show discount impact table
         display_discount = top_discount_brands.copy()
@@ -1961,7 +1961,7 @@ def create_returns_analysis(data_processor: DataProcessor):
         top_returns = returns_df.nlargest(top_n_returns_qty, 'Qty')
         fig = px.bar(top_returns, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_returns_qty} Products with Most Returns")
         fig.update_layout(height=max(400, top_n_returns_qty * 15), yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
     with col2:
         st.subheader("💸 Return Value Analysis")
@@ -1977,7 +1977,7 @@ def create_returns_analysis(data_processor: DataProcessor):
         top_returns_value = returns_df.nlargest(top_n_returns_value, 'Value')
         fig = px.bar(top_returns_value, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_returns_value} Products with Highest Return Value")
         fig.update_layout(height=max(400, top_n_returns_value * 15), yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
 def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
     """Create AI insights tab with chatbot"""
@@ -2133,7 +2133,7 @@ def create_business_insights(data_processor: DataProcessor):
             ["Net Revenue", f"₹{net_revenue:,.0f}"],
             ["Return Rate", f"{return_rate:.2f}% ({format_indian_number(data_processor.get_insights().get('return_count', 0))} returns)"]
         ], columns=["Metric", "Value"])
-        st.dataframe(metrics_df, width='stretch')
+        st.dataframe(metrics_df, use_container_width=True)
 
     with col2:
         st.subheader("🎯 Top Recommendations")
@@ -2232,7 +2232,7 @@ def create_business_insights(data_processor: DataProcessor):
                     orientation='h'
                 )
                 fig_sizes.update_layout(height=max(400, len(size_dist_df) * 20))
-                st.plotly_chart(fig_sizes, width='stretch')
+                st.plotly_chart(fig_sizes, use_container_width=True)
 
     # Action plan
     st.subheader("📋 Action Plan")
