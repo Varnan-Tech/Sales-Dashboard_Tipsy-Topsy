@@ -1413,14 +1413,14 @@ def create_performance_analysis(data_processor: DataProcessor):
 
         combined_df = pd.DataFrame(combined_data)
 
-        # Create grouped bar chart
+        # Create grouped bar chart with traffic light system
         fig_combined = px.bar(
             combined_df,
             x='Product',
             y=['Fastest_Qty_Day', 'Best_Net_Qty'],
             title=f"Top {top_n} Fastest & Best Selling Products",
             barmode='group',
-            color_discrete_sequence=['#2E86AB', '#A23B72'],
+            color_discrete_sequence=['#00FF00', '#228B22'],  # Green shades for best performers
             height=max(500, top_n * 20)
         )
 
@@ -1464,13 +1464,111 @@ def create_performance_analysis(data_processor: DataProcessor):
             y='Brand_Product',
             title=f"Bottom {bottom_n} Products by Net Quantity",
             color='Net_Qty',
-            color_continuous_scale='reds',
+            color_continuous_scale=['#FF0000', '#8B0000'],  # Red shades for worst performers
             orientation='h'
         )
         fig_bottom.update_layout(height=max(400, bottom_n * 15), yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig_bottom, use_container_width=True)
 
+    # Style Analysis - Most Selling Shirts/Jeans with Color Breakdown
+    st.markdown("---")
+    st.subheader("👕 Style Analysis - Shirts & Jeans Performance")
+
+    style_n = st.selectbox(
+        "Select number of styles to display:",
+        options=[5, 10, 15, 20, 25, 50],
+        index=1,  # 10 is at index 1
+        key="style_analysis_n"
+    )
+
+    if not sales_df.empty:
+        # Filter for shirts and jeans only
+        style_sales = sales_df[sales_df['Product Code'].str.upper().isin(['SHIRT', 'JEANS', 'T-SHIRT', 'TSHIRT'])].copy()
+
+        if not style_sales.empty:
+            # Group by Style Code and analyze performance
+            style_performance = style_sales.groupby('Style Code').agg({
+                'Qty': 'sum',
+                'Value': 'sum',
+                'Bill No': 'nunique'  # Number of transactions
+            }).reset_index()
+
+            style_performance['Avg_Order_Value'] = style_performance['Value'] / style_performance['Bill No']
+            style_performance = style_performance.sort_values('Qty', ascending=False)
+            top_styles = style_performance.head(style_n)
+
+            # Create traffic light color scale (green for best, red for worst)
+            color_scale = ['#FF0000', '#FF4444', '#FF8888', '#FFCCCC', '#00FF00']  # Red to Green
+            if len(top_styles) > 1:
+                # Assign colors based on rank (red for worst, green for best)
+                colors = color_scale[:len(top_styles)]
+                colors.reverse()  # Reverse so green is first (best)
+
+            col_style1, col_style2 = st.columns(2)
+
+            with col_style1:
+                st.markdown("**Top Performing Styles**")
+                fig_styles = px.bar(
+                    top_styles,
+                    x='Qty',
+                    y='Style Code',
+                    title=f"Top {style_n} Shirts & Jeans Styles by Quantity",
+                    color='Qty',
+                    color_continuous_scale=['#FF0000', '#00FF00'],  # Red to Green
+                    orientation='h'
+                )
+                fig_styles.update_layout(height=max(400, style_n * 15), yaxis={'categoryorder': 'total ascending'})
+                st.plotly_chart(fig_styles, use_container_width=True)
+
+            with col_style2:
+                st.markdown("**Style Revenue Performance**")
+                fig_style_revenue = px.bar(
+                    top_styles,
+                    x='Value',
+                    y='Style Code',
+                    title=f"Top {style_n} Styles by Revenue",
+                    color='Value',
+                    color_continuous_scale=['#FF0000', '#00FF00'],  # Red to Green
+                    orientation='h'
+                )
+                fig_style_revenue.update_layout(height=max(400, style_n * 15), yaxis={'categoryorder': 'total ascending'})
+                st.plotly_chart(fig_style_revenue, use_container_width=True)
+
+            # Color breakdown for each top style
+            st.markdown("---")
+            st.subheader("🎨 Color Performance by Style")
+
+            for _, style_row in top_styles.iterrows():
+                style_code = style_row['Style Code']
+                style_data = style_sales[style_sales['Style Code'] == style_code]
+
+                # Group by color for this style
+                color_breakdown = style_data.groupby('Shade Code').agg({
+                    'Qty': 'sum',
+                    'Value': 'sum'
+                }).reset_index()
+
+                if not color_breakdown.empty:
+                    color_breakdown = color_breakdown.sort_values('Qty', ascending=False)
+
+                    st.markdown(f"**{style_code} - Color Performance**")
+                    fig_color = px.bar(
+                        color_breakdown.head(10),  # Show top 10 colors
+                        x='Qty',
+                        y='Shade Code',
+                        title=f"{style_code} - Colors by Quantity Sold",
+                        color='Qty',
+                        color_continuous_scale=['#FF0000', '#00FF00'],  # Red to Green
+                        orientation='h'
+                    )
+                    fig_color.update_layout(height=300, yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_color, use_container_width=True)
+                    st.markdown("---")
+        else:
+            st.info("No shirt or jeans data found in the selected filters.")
+
     # Size and Color Analysis
+    st.markdown("---")
     st.markdown("**Size & Color Analysis**")
 
 
@@ -1913,7 +2011,7 @@ def create_price_discount_analysis(data_processor: DataProcessor):
         st.dataframe(display_discount[['Brand Name', 'Brand Code', 'Discount_Percent', 'Avg_Discount_Amount', 'Total_Quantity']])
 
 def create_returns_analysis(data_processor: DataProcessor):
-    """Create returns analysis tab"""
+    """Create returns analysis tab with traffic light system"""
     st.markdown('<div class="section-header">🔄 Returns Analysis</div>', unsafe_allow_html=True)
 
     # Use filtered data if available
@@ -1943,41 +2041,111 @@ def create_returns_analysis(data_processor: DataProcessor):
         st.info("No returns data available for the selected filters.")
         return
 
+    returns_data_df = pd.DataFrame(return_analysis)
+    returns_data_df['Brand_Product'] = returns_data_df['Brand Code'] + ' - ' + returns_data_df['Product Code']
+
+    # Configurable top N selector for all return charts
+    returns_n = st.selectbox(
+        "Select number of products to display:",
+        options=[5, 10, 15, 20, 25, 50],
+        index=1,  # 10 is at index 1
+        key="returns_analysis_n"
+    )
+
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📦 Products with Most Returns")
+        st.subheader("📦 Highest Returns (Red Alert)")
 
-        # Configurable top N selector
-        top_n_returns_qty = st.selectbox(
-            "Select number of products to display:",
-            options=[5, 10, 15, 20, 25, 50],
-            index=1,  # 10 is at index 1
-            key="returns_qty_n"
+        top_returns = returns_data_df.nlargest(returns_n, 'Qty')
+        fig_top = px.bar(
+            top_returns,
+            x='Qty',
+            y='Brand_Product',
+            orientation='h',
+            title=f"Top {returns_n} Products with Most Returns",
+            color='Qty',
+            color_continuous_scale=['#FF0000', '#8B0000']  # Red for worst (most returns)
         )
+        fig_top.update_layout(height=max(400, returns_n * 15), yaxis={'categoryorder': 'total ascending'})
+        st.plotly_chart(fig_top, use_container_width=True)
 
-        returns_df = pd.DataFrame(return_analysis)
-        returns_df['Brand_Product'] = returns_df['Brand Code'] + ' - ' + returns_df['Product Code']
-        top_returns = returns_df.nlargest(top_n_returns_qty, 'Qty')
-        fig = px.bar(top_returns, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_returns_qty} Products with Most Returns")
-        fig.update_layout(height=max(400, top_n_returns_qty * 15), yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig, use_container_width=True)
+        # Show product codes table
+        st.markdown("**Product Codes with Most Returns:**")
+        top_returns_table = top_returns[['Brand_Product', 'Qty']].copy()
+        top_returns_table['Qty'] = top_returns_table['Qty'].astype(int)
+        st.dataframe(top_returns_table, use_container_width=True)
 
     with col2:
-        st.subheader("💸 Return Value Analysis")
+        st.subheader("💸 Lowest Returns (Green Success)")
 
-        # Configurable top N selector
-        top_n_returns_value = st.selectbox(
-            "Select number of products to display:",
-            options=[5, 10, 15, 20, 25, 50],
-            index=1,  # 10 is at index 1
-            key="returns_value_n"
+        # Find products with least returns (but have some returns)
+        least_returns = returns_data_df.nsmallest(returns_n, 'Qty')
+        fig_least = px.bar(
+            least_returns,
+            x='Qty',
+            y='Brand_Product',
+            orientation='h',
+            title=f"Top {returns_n} Products with Least Returns",
+            color='Qty',
+            color_continuous_scale=['#00FF00', '#228B22']  # Green for best (least returns)
         )
+        fig_least.update_layout(height=max(400, returns_n * 15), yaxis={'categoryorder': 'total ascending'})
+        st.plotly_chart(fig_least, use_container_width=True)
 
-        top_returns_value = returns_df.nlargest(top_n_returns_value, 'Value')
-        fig = px.bar(top_returns_value, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_returns_value} Products with Highest Return Value")
-        fig.update_layout(height=max(400, top_n_returns_value * 15), yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig, use_container_width=True)
+        # Show product codes table
+        st.markdown("**Product Codes with Least Returns:**")
+        least_returns_table = least_returns[['Brand_Product', 'Qty']].copy()
+        least_returns_table['Qty'] = least_returns_table['Qty'].astype(int)
+        st.dataframe(least_returns_table, use_container_width=True)
+
+    # Additional analysis section
+    st.markdown("---")
+    st.subheader("📊 Return Value Analysis")
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        st.markdown("**Highest Return Values (Red Alert)**")
+        top_returns_value = returns_data_df.nlargest(returns_n, 'Value')
+        fig_value = px.bar(
+            top_returns_value,
+            x='Value',
+            y='Brand_Product',
+            orientation='h',
+            title=f"Top {returns_n} Products by Return Value",
+            color='Value',
+            color_continuous_scale=['#FF0000', '#8B0000']  # Red for worst
+        )
+        fig_value.update_layout(height=max(400, returns_n * 15), yaxis={'categoryorder': 'total ascending'})
+        st.plotly_chart(fig_value, use_container_width=True)
+
+    with col4:
+        st.markdown("**Return Rate by Product Category**")
+        if not sales_df.empty:
+            # Calculate return rates by product type
+            sales_by_product = sales_df.groupby('Product Code')['Qty'].sum()
+            returns_by_product = returns_data_df.groupby('Product Code')['Qty'].sum()
+
+            return_rates = pd.DataFrame({
+                'Total_Sales': sales_by_product,
+                'Total_Returns': returns_by_product
+            }).fillna(0)
+
+            return_rates['Return_Rate'] = (return_rates['Total_Returns'] / return_rates['Total_Sales'] * 100).fillna(0)
+            return_rates = return_rates.sort_values('Return_Rate', ascending=False).head(returns_n)
+
+            fig_rate = px.bar(
+                return_rates,
+                x='Return_Rate',
+                y=return_rates.index,
+                orientation='h',
+                title=f"Return Rates by Product Type (Top {returns_n})",
+                color='Return_Rate',
+                color_continuous_scale=['#00FF00', '#FFFF00', '#FF0000']  # Green to Yellow to Red
+            )
+            fig_rate.update_layout(height=max(400, returns_n * 15), yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig_rate, use_container_width=True)
 
 def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
     """Create AI insights tab with chatbot"""
