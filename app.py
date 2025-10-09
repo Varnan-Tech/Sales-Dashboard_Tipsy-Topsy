@@ -169,30 +169,81 @@ def get_brand_name(brand_code):
     return BRAND_NAME_MAPPING.get(brand_code_str, brand_code_str)
 
 def get_product_categories(df):
-    """Get available product categories from dataframe"""
+    """Get available product categories from dataframe - dynamically from Product Code column"""
     if df is None or df.empty:
         return {}
 
-    category_keywords = {
-        'T-Shirts': ['T-SHIRT', 'TEE', 'T SHIRT'],
-        'Shirts': ['SHIRT'],
-        'Trousers': ['TROUSER', 'PANT'],
-        'Jeans': ['JEANS', 'DENIM'],
-        'Jackets': ['JACKET', 'BLAZER'],
-        'Others': []
-    }
+    # Get all unique product codes and use them directly as categories
+    # This makes the system flexible and works with any sheet structure
+    unique_products = df['Product Code'].dropna().unique()
 
+    # Create categories dictionary using unique product codes as keys
     categories_found = {}
-    for category, keywords in category_keywords.items():
-        if keywords:
-            # Check if any products match this category
-            mask = df['Product Code'].str.contains('|'.join(keywords), case=False, na=False)
-            if mask.any():
-                categories_found[category] = True
 
-    return categories_found
+    for product in unique_products:
+        product_str = str(product).strip()
+        if product_str and product_str != 'nan' and product_str != '':
+            # Use the product code exactly as it appears in the sheet
+            categories_found[product_str] = True
 
-def get_filtered_data(df, brand=None, category=None, color=None, size=None):
+    # Sort categories for consistent display
+    sorted_categories = dict(sorted(categories_found.items()))
+
+    return sorted_categories
+
+def get_product_codes_for_brand(df, brand):
+    """Get available product codes for a specific brand"""
+    if df is None or df.empty or brand == "All Brands":
+        return []
+
+    brand_data = df[df['Brand Code'] == brand]
+    return sorted(brand_data['Product Code'].dropna().unique())
+
+def get_style_codes_for_brand_product(df, brand, product_code):
+    """Get available style codes for a specific brand and product code"""
+    if df is None or df.empty or brand == "All Brands" or product_code == "All Product Codes":
+        return []
+
+    filtered_data = df[(df['Brand Code'] == brand) & (df['Product Code'] == product_code)]
+    return sorted(filtered_data['Style Code'].dropna().unique())
+
+def normalize_shade_codes(df):
+    """Normalize shade codes to handle wide ranges (200s vs 900s)"""
+    if df is None or df.empty or 'Shade Code' not in df.columns:
+        return df
+
+    df = df.copy()
+
+    # Convert shade codes to string first
+    df['Shade Code'] = df['Shade Code'].astype(str)
+
+    # Create normalized shade code categories
+    def categorize_shade(shade_str):
+        if not shade_str or shade_str.lower() in ['nan', 'none', 'null', '']:
+            return 'Unknown'
+
+        # Extract numeric part if possible
+        import re
+        numeric_match = re.search(r'\d+', shade_str)
+        if numeric_match:
+            shade_num = int(numeric_match.group())
+            # Categorize into ranges to handle 200s vs 900s issue
+            if shade_num < 300:
+                return f"Light ({shade_num})"
+            elif shade_num < 600:
+                return f"Medium ({shade_num})"
+            elif shade_num < 800:
+                return f"Dark ({shade_num})"
+            else:
+                return f"Deep ({shade_num})"
+        else:
+            # For non-numeric shade codes, keep as is but clean up
+            return shade_str.strip().title()
+
+    df['Shade_Code_Normalized'] = df['Shade Code'].apply(categorize_shade)
+    return df
+
+def get_filtered_data(df, brand=None, category=None, product_code=None, style_code=None, color=None, size=None):
     """Apply multi-level filtering to dataframe"""
     filtered_df = df.copy()
 
@@ -200,20 +251,20 @@ def get_filtered_data(df, brand=None, category=None, color=None, size=None):
     if brand and brand != "All Brands":
         filtered_df = filtered_df[filtered_df['Brand Code'] == brand]
 
-    # Category filter
+    # Category filter - now uses exact product code matching since categories are product codes
     if category and category != "All Categories":
-        category_keywords = {
-            'T-Shirts': ['T-SHIRT', 'TEE', 'T SHIRT'],
-            'Shirts': ['SHIRT'],
-            'Trousers': ['TROUSER', 'PANT'],
-            'Jeans': ['JEANS', 'DENIM'],
-            'Jackets': ['JACKET', 'BLAZER']
-        }
+        # Since categories are now the actual product codes from the sheet,
+        # we do exact matching instead of keyword matching
+        mask = filtered_df['Product Code'] == category
+        filtered_df = filtered_df[mask]
 
-        if category in category_keywords:
-            keywords = category_keywords[category]
-            mask = filtered_df['Product Code'].str.contains('|'.join(keywords), case=False, na=False)
-            filtered_df = filtered_df[mask]
+    # Product Code filter
+    if product_code and product_code != "All Product Codes" and 'Product Code' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Product Code'] == product_code]
+
+    # Style Code filter
+    if style_code and style_code != "All Style Codes" and 'Style Code' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Style Code'] == style_code]
 
     # Color filter
     if color and color != "All Colors" and 'Shade Code' in filtered_df.columns:
@@ -255,6 +306,7 @@ class DataProcessor:
                         st.error(f"❌ Error reading CSV file: {str(e)}")
                         st.info("💡 Try saving your CSV file with UTF-8 encoding, or use Excel format.")
                         return False
+                st.info(f"✅ Successfully loaded {len(self.df):,} rows from CSV file")
             elif file_extension in ['xlsx', 'xlsb']:
                 # Read Excel file with better error handling for large files
                 try:
@@ -444,11 +496,23 @@ class DataProcessor:
                 # Make quantities positive for calculations
                 self.returns_df['Qty'] = self.returns_df['Qty'].abs()
 
+            # Normalize shade codes to handle wide ranges (200s vs 900s)
+            self.df = normalize_shade_codes(self.df)
+
+            # Ensure all quantities are integers
+            if 'Qty' in self.df.columns:
+                self.df['Qty'] = pd.to_numeric(self.df['Qty'], errors='coerce').fillna(0).astype(int)
+            if 'Value' in self.df.columns:
+                self.df['Value'] = pd.to_numeric(self.df['Value'], errors='coerce').fillna(0)
+
             # Add computed columns
             self._add_computed_columns()
 
             # Generate insights
             self._generate_insights()
+
+            # Show success message with data summary
+            st.success(f"✅ Data loaded successfully! {len(self.df):,} total transactions ({len(self.sales_df):,} sales, {len(self.returns_df):,} returns)")
 
             return True
 
@@ -1246,31 +1310,73 @@ def create_performance_analysis(data_processor: DataProcessor):
         )
 
     with col_filter2:
-        # Category Selection (dependent on brand)
+        # Product Code Selection (dependent on brand)
         if selected_brand != "All Brands":
+            available_product_codes = get_product_codes_for_brand(data_processor.sales_df, selected_brand)
+        else:
+            available_product_codes = sorted(data_processor.sales_df['Product Code'].dropna().unique()) if data_processor.sales_df is not None else []
+
+        selected_product_code = st.selectbox(
+            "Select Product Code:",
+            options=["All Product Codes"] + available_product_codes,
+            index=0,
+            key="filter_product_code"
+        )
+
+    # Category and Style Code filters (dependent on brand and product code)
+    col_filter3, col_filter4 = st.columns([1, 1])
+
+    with col_filter3:
+        # Product Category Selection (dependent on brand and product code)
+        # Note: Categories are now the actual product codes from your sheet
+        if selected_brand != "All Brands" and selected_product_code != "All Product Codes":
+            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, product_code=selected_product_code)
+            available_categories = get_product_categories(filtered_data)
+        elif selected_brand != "All Brands":
             brand_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
             available_categories = get_product_categories(brand_data)
         else:
             available_categories = get_product_categories(data_processor.sales_df)
 
         selected_category = st.selectbox(
-            "Select Category:",
+            "Select Product Category:",
             options=["All Categories"] + list(available_categories.keys()),
             index=0,
             key="filter_category"
         )
 
-    # Color and Size filters (dependent on brand and category)
-    col_filter3, col_filter4 = st.columns([1, 1])
+    with col_filter4:
+        # Style Code Selection (dependent on brand and product code)
+        if selected_brand != "All Brands" and selected_product_code != "All Product Codes":
+            available_style_codes = get_style_codes_for_brand_product(data_processor.sales_df, selected_brand, selected_product_code)
+        elif selected_brand != "All Brands":
+            brand_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
+            available_style_codes = sorted(brand_data['Style Code'].dropna().unique()) if 'Style Code' in brand_data.columns else []
+        else:
+            available_style_codes = []
 
-    with col_filter3:
-        # Color Selection
-        if selected_brand != "All Brands" and selected_category != "All Categories":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, selected_category)
-            available_colors = sorted(filtered_data['Shade Code'].dropna().unique()) if 'Shade Code' in filtered_data.columns else []
+        selected_style_code = st.selectbox(
+            "Select Style Code:",
+            options=["All Style Codes"] + available_style_codes,
+            index=0,
+            key="filter_style_code"
+        )
+
+    # Color and Size filters (dependent on all previous filters)
+    col_filter5, col_filter6 = st.columns([1, 1])
+
+    with col_filter5:
+        # Color Selection (using normalized shade codes)
+        if selected_brand != "All Brands" and selected_product_code != "All Product Codes" and selected_style_code != "All Style Codes":
+            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, category=selected_category,
+                                            product_code=selected_product_code, style_code=selected_style_code)
+            available_colors = sorted(filtered_data['Shade_Code_Normalized'].dropna().unique()) if 'Shade_Code_Normalized' in filtered_data.columns else []
+        elif selected_brand != "All Brands" and selected_product_code != "All Product Codes":
+            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, product_code=selected_product_code)
+            available_colors = sorted(filtered_data['Shade_Code_Normalized'].dropna().unique()) if 'Shade_Code_Normalized' in filtered_data.columns else []
         elif selected_brand != "All Brands":
             filtered_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
-            available_colors = sorted(filtered_data['Shade Code'].dropna().unique()) if 'Shade Code' in filtered_data.columns else []
+            available_colors = sorted(filtered_data['Shade_Code_Normalized'].dropna().unique()) if 'Shade_Code_Normalized' in filtered_data.columns else []
         else:
             available_colors = []
 
@@ -1281,13 +1387,18 @@ def create_performance_analysis(data_processor: DataProcessor):
             key="filter_color"
         )
 
-    with col_filter4:
+    with col_filter6:
         # Size Selection
-        if selected_brand != "All Brands" and selected_category != "All Categories" and selected_color != "All Colors":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, selected_category, selected_color)
+        if selected_brand != "All Brands" and selected_product_code != "All Product Codes" and selected_style_code != "All Style Codes" and selected_color != "All Colors":
+            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, category=selected_category,
+                                            product_code=selected_product_code, style_code=selected_style_code, color=selected_color)
             available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
-        elif selected_brand != "All Brands" and selected_category != "All Categories":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, selected_category)
+        elif selected_brand != "All Brands" and selected_product_code != "All Product Codes" and selected_style_code != "All Style Codes":
+            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, category=selected_category,
+                                            product_code=selected_product_code, style_code=selected_style_code)
+            available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
+        elif selected_brand != "All Brands" and selected_product_code != "All Product Codes":
+            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, product_code=selected_product_code)
             available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
         elif selected_brand != "All Brands":
             filtered_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
@@ -1303,37 +1414,79 @@ def create_performance_analysis(data_processor: DataProcessor):
         )
 
     # Apply all filters to get the final filtered dataframe
-    filtered_df = get_filtered_data(data_processor.sales_df, selected_brand, selected_category, selected_color, selected_size)
+    filtered_df = get_filtered_data(data_processor.sales_df, selected_brand, selected_category,
+                                   selected_product_code, selected_style_code, selected_color, selected_size)
 
     # Show filter summary
     filter_summary = []
     if selected_brand != "All Brands":
         filter_summary.append(f"Brand: {get_brand_name(selected_brand)}")
+    if selected_product_code != "All Product Codes":
+        filter_summary.append(f"Product Code: {selected_product_code}")
     if selected_category != "All Categories":
-        filter_summary.append(f"Category: {selected_category}")
+        filter_summary.append(f"Product Category: {selected_category}")
+    if selected_style_code != "All Style Codes":
+        filter_summary.append(f"Style Code: {selected_style_code}")
     if selected_color != "All Colors":
         filter_summary.append(f"Color: {selected_color}")
     if selected_size != "All Sizes":
         filter_summary.append(f"Size: {selected_size}")
 
     if filter_summary:
-        st.info(f"📊 Applied Filters: {', '.join(filter_summary)}")
+        st.info(f"🔍 Active Filters: {', '.join(filter_summary)}")
+        st.info(f"📊 Filtered Results: {len(filtered_df):,} transactions")
+
+    # Show unique product categories available in current filter
+    if not filtered_df.empty:
+        unique_categories_in_filter = filtered_df['Product Code'].dropna().unique()
+        if len(unique_categories_in_filter) > 0:
+            st.info(f"📋 Available Product Categories in Current Filter: {len(unique_categories_in_filter)} categories")
+            # Show first few as examples
+            with st.expander("View Sample Product Categories"):
+                st.write("Sample categories from your sheet:")
+                for category in unique_categories_in_filter[:10]:
+                    st.write(f"• {category}")
+                if len(unique_categories_in_filter) > 10:
+                    st.write(f"... and {len(unique_categories_in_filter) - 10} more")
 
     # Configurable top N selector for all graphs
+    # Show more options when a brand is selected
+    if selected_brand != "All Brands":
+        top_n_options = [5, 10, 15, 20, 25, 50, 100, 200]
+        default_index = 3  # 20 is at index 3
+    else:
+        top_n_options = [5, 10, 15, 20, 25, 50]
+        default_index = 1  # 10 is at index 1
+
     top_n = st.selectbox(
         "Select number of products to display:",
-        options=[5, 10, 15, 20, 25, 50],
-        index=1,  # 10 is at index 1
+        options=top_n_options,
+        index=default_index,
         key="product_performance_top_n"
     )
 
-    # Combined Fastest & Best Selling Analysis
-    st.subheader(f"Top {top_n} Fastest & Best Selling Products")
+    # Combined Fastest & Best Selling Analysis - Style Code based when brand selected
+    selected_brand = st.session_state.get('filter_brand', 'All Brands')
+
+    if selected_brand != "All Brands":
+        st.subheader(f"Top {top_n} Fastest & Best Selling Styles - {get_brand_name(selected_brand)}")
+    else:
+        st.subheader(f"Top {top_n} Fastest & Best Selling Products")
 
     sales_df = filtered_df if not filtered_df.empty else (data_processor.sales_df if data_processor.sales_df is not None else pd.DataFrame())
     returns_df = data_processor.returns_df if data_processor.returns_df is not None else pd.DataFrame()
 
     if not sales_df.empty:
+        # Determine grouping level based on brand selection
+        if selected_brand != "All Brands":
+            # Group by Style Code for brand-specific analysis
+            group_columns = ['Brand Code', 'Product Code', 'Style Code']
+            display_columns = ['Brand Code', 'Product Code', 'Style Code']
+        else:
+            # Group by Product Code for general analysis
+            group_columns = ['Brand Code', 'Product Code']
+            display_columns = ['Brand Code', 'Product Code']
+
         # Calculate daily rates for fastest selling - only use valid dates
         valid_date_sales = sales_df[~sales_df['Bill Date'].isna()]
 
@@ -1342,47 +1495,61 @@ def create_performance_analysis(data_processor: DataProcessor):
             max_date = valid_date_sales['Bill Date'].max()
             days_in_period = (max_date - min_date).days + 1
 
-            daily_rates = valid_date_sales.groupby(['Brand Code', 'Product Code']).agg({
+            daily_rates = valid_date_sales.groupby(group_columns).agg({
                 'Qty': 'sum'
             }).reset_index()
 
             daily_rates['Qty_Per_Day'] = (daily_rates['Qty'] / days_in_period).round(0).astype(int)
-            daily_rates['Brand_Product'] = daily_rates['Brand Code'] + ' - ' + daily_rates['Product Code']
+
+            if selected_brand != "All Brands":
+                daily_rates['Brand_Product_Style'] = daily_rates['Brand Code'] + ' - ' + daily_rates['Product Code'] + ' - ' + daily_rates['Style Code']
+            else:
+                daily_rates['Brand_Product_Style'] = daily_rates['Brand Code'] + ' - ' + daily_rates['Product Code']
+
             daily_rates = daily_rates.sort_values('Qty_Per_Day', ascending=False)
             top_fastest = daily_rates.head(top_n)
         else:
             # If no valid dates, use all data but with a default period
             st.warning("⚠️ No valid dates for calculating daily rates. Using total quantity instead.")
-            daily_rates = sales_df.groupby(['Brand Code', 'Product Code']).agg({
+            daily_rates = sales_df.groupby(group_columns).agg({
                 'Qty': 'sum'
             }).reset_index()
             daily_rates['Qty_Per_Day'] = daily_rates['Qty']  # Use total quantity as daily rate
-            daily_rates['Brand_Product'] = daily_rates['Brand Code'] + ' - ' + daily_rates['Product Code']
+
+            if selected_brand != "All Brands":
+                daily_rates['Brand_Product_Style'] = daily_rates['Brand Code'] + ' - ' + daily_rates['Product Code'] + ' - ' + daily_rates['Style Code']
+            else:
+                daily_rates['Brand_Product_Style'] = daily_rates['Brand Code'] + ' - ' + daily_rates['Product Code']
+
             daily_rates = daily_rates.sort_values('Qty_Per_Day', ascending=False)
             top_fastest = daily_rates.head(top_n)
 
         # Calculate best selling (net quantity)
-        sales_summary = sales_df.groupby(['Brand Code', 'Product Code']).agg({
+        sales_summary = sales_df.groupby(group_columns).agg({
             'Qty': 'sum',
             'Value': 'sum'
         }).reset_index()
 
         if not returns_df.empty:
-            returns_summary = returns_df.groupby(['Brand Code', 'Product Code']).agg({
+            returns_summary = returns_df.groupby(group_columns).agg({
                 'Qty': lambda x: abs(x.sum()),
                 'Value': lambda x: abs(x.sum())
             }).reset_index()
-            returns_summary.columns = ['Brand Code', 'Product Code', 'Return_Qty', 'Return_Value']
+            returns_summary.columns = ['Brand Code', 'Product Code', 'Style Code', 'Return_Qty', 'Return_Value'] if selected_brand != "All Brands" else ['Brand Code', 'Product Code', 'Return_Qty', 'Return_Value']
 
-            net_data = pd.merge(sales_summary, returns_summary[['Brand Code', 'Product Code', 'Return_Qty', 'Return_Value']],
-                              on=['Brand Code', 'Product Code'], how='left')
+            net_data = pd.merge(sales_summary, returns_summary,
+                              on=group_columns, how='left')
             net_data[['Return_Qty', 'Return_Value']] = net_data[['Return_Qty', 'Return_Value']].fillna(0)
             net_data['Net_Qty'] = (net_data['Qty'] - net_data['Return_Qty']).astype(int)
         else:
             net_data = sales_summary.copy()
             net_data['Net_Qty'] = net_data['Qty'].astype(int)
 
-        net_data['Brand_Product'] = net_data['Brand Code'] + ' - ' + net_data['Product Code']
+        if selected_brand != "All Brands":
+            net_data['Brand_Product_Style'] = net_data['Brand Code'] + ' - ' + net_data['Product Code'] + ' - ' + net_data['Style Code']
+        else:
+            net_data['Brand_Product_Style'] = net_data['Brand Code'] + ' - ' + net_data['Product Code']
+
         net_data = net_data.sort_values('Net_Qty', ascending=False)
         top_best = net_data.head(top_n)
 
@@ -1391,21 +1558,21 @@ def create_performance_analysis(data_processor: DataProcessor):
         for i, (_, row) in enumerate(top_fastest.iterrows()):
             combined_data.append({
                 'Rank': i + 1,
-                'Product': row['Brand_Product'],
+                'Product': row['Brand_Product_Style'],
                 'Fastest_Qty_Day': row['Qty_Per_Day'],
                 'Best_Net_Qty': 0,
                 'Type': 'Fastest'
             })
 
         for i, (_, row) in enumerate(top_best.iterrows()):
-            # Check if this product is already in fastest list
-            existing = next((item for item in combined_data if item['Product'] == row['Brand_Product']), None)
+            # Check if this product/style is already in fastest list
+            existing = next((item for item in combined_data if item['Product'] == row['Brand_Product_Style']), None)
             if existing:
                 existing['Best_Net_Qty'] = row['Net_Qty']
             else:
                 combined_data.append({
                     'Rank': i + 1,
-                    'Product': row['Brand_Product'],
+                    'Product': row['Brand_Product_Style'],
                     'Fastest_Qty_Day': 0,
                     'Best_Net_Qty': row['Net_Qty'],
                     'Type': 'Best'
@@ -1413,12 +1580,23 @@ def create_performance_analysis(data_processor: DataProcessor):
 
         combined_df = pd.DataFrame(combined_data)
 
+        # Sort by best performance (highest Net_Qty first, then highest Qty_Per_Day)
+        combined_df = combined_df.sort_values(['Best_Net_Qty', 'Fastest_Qty_Day'], ascending=[False, False])
+
+        # Reassign ranks based on sorted order
+        combined_df['Rank'] = range(1, len(combined_df) + 1)
+
         # Create grouped bar chart with traffic light system
+        if selected_brand != "All Brands":
+            chart_title = f"Top {top_n} Fastest & Best Selling Styles - {get_brand_name(selected_brand)}"
+        else:
+            chart_title = f"Top {top_n} Fastest & Best Selling Products"
+
         fig_combined = px.bar(
             combined_df,
             x='Product',
             y=['Fastest_Qty_Day', 'Best_Net_Qty'],
-            title=f"Top {top_n} Fastest & Best Selling Products",
+            title=chart_title,
             barmode='group',
             color_discrete_sequence=['#00FF00', '#228B22'],  # Green shades for best performers
             height=max(500, top_n * 20)
@@ -1426,7 +1604,7 @@ def create_performance_analysis(data_processor: DataProcessor):
 
         # Customize the chart
         fig_combined.update_layout(
-            xaxis_title="Products",
+            xaxis_title="Products/Styles",
             yaxis_title="Quantity",
             legend_title="Metric Type",
             xaxis={'tickangle': -45}
@@ -1446,23 +1624,48 @@ def create_performance_analysis(data_processor: DataProcessor):
 
     # Bottom performers section
     if not net_data.empty:
-        st.subheader("⚠️ Bottom 5 Products (Need Attention)")
+        # Define default value for bottom_n before using it in subheader
+        bottom_n = 5  # Default value
+
+        if selected_brand != "All Brands":
+            st.subheader(f"⚠️ Bottom {bottom_n} Styles (Need Attention) - {get_brand_name(selected_brand)}")
+        else:
+            st.subheader("⚠️ Bottom 5 Products (Need Attention)")
+
+        # Show more options when a brand is selected
+        if selected_brand != "All Brands":
+            bottom_n_options = [5, 10, 15, 20, 25, 50, 100]
+            default_bottom_index = 1  # 10 is at index 1
+        else:
+            bottom_n_options = [5, 10, 15, 20, 25, 50]
+            default_bottom_index = 0  # 5 is at index 0
 
         bottom_n = st.selectbox(
             "Select number of products to display:",
-            options=[5, 10, 15, 20, 25, 50],
-            index=0,  # 5 is at index 0
+            options=bottom_n_options,
+            index=default_bottom_index,
             key="bottom_products_n"
         )
 
         bottom_products = net_data.nsmallest(bottom_n, 'Net_Qty')
-        bottom_products['Brand_Product'] = bottom_products['Brand Code'] + ' - ' + bottom_products['Product Code']
+
+        if selected_brand != "All Brands":
+            bottom_products['Brand_Product_Style'] = bottom_products['Brand Code'] + ' - ' + bottom_products['Product Code'] + ' - ' + bottom_products['Style Code']
+            display_column = 'Brand_Product_Style'
+            chart_title = f"Bottom {bottom_n} Styles by Net Quantity - {get_brand_name(selected_brand)}"
+        else:
+            bottom_products['Brand_Product_Style'] = bottom_products['Brand Code'] + ' - ' + bottom_products['Product Code']
+            display_column = 'Brand_Product_Style'
+            chart_title = f"Bottom {bottom_n} Products by Net Quantity"
+
+        # Sort bottom products to show worst performers first (at the top)
+        bottom_products = bottom_products.sort_values('Net_Qty', ascending=True)
 
         fig_bottom = px.bar(
             bottom_products,
             x='Net_Qty',
-            y='Brand_Product',
-            title=f"Bottom {bottom_n} Products by Net Quantity",
+            y=display_column,
+            title=chart_title,
             color='Net_Qty',
             color_continuous_scale=['#FF0000', '#8B0000'],  # Red shades for worst performers
             orientation='h'
@@ -1474,16 +1677,27 @@ def create_performance_analysis(data_processor: DataProcessor):
     st.markdown("---")
     st.subheader("👕 Style Analysis - Shirts & Jeans Performance")
 
+    # Show more options when a brand is selected for style analysis
+    if selected_brand != "All Brands":
+        style_n_options = [5, 10, 15, 20, 25, 50, 100, 150]
+        default_style_index = 3  # 20 is at index 3
+    else:
+        style_n_options = [5, 10, 15, 20, 25, 50]
+        default_style_index = 1  # 10 is at index 1
+
     style_n = st.selectbox(
         "Select number of styles to display:",
-        options=[5, 10, 15, 20, 25, 50],
-        index=1,  # 10 is at index 1
+        options=style_n_options,
+        index=default_style_index,
         key="style_analysis_n"
     )
 
     if not sales_df.empty:
-        # Filter for shirts and jeans only
-        style_sales = sales_df[sales_df['Product Code'].str.upper().isin(['SHIRT', 'JEANS', 'T-SHIRT', 'TSHIRT'])].copy()
+        # Filter for shirts and jeans only, unless a brand is selected (then show all products for that brand)
+        if selected_brand != "All Brands":
+            style_sales = sales_df.copy()  # Show all products for the selected brand
+        else:
+            style_sales = sales_df[sales_df['Product Code'].str.upper().isin(['SHIRT', 'JEANS', 'T-SHIRT', 'TSHIRT'])].copy()
 
         if not style_sales.empty:
             # Group by Style Code and analyze performance
@@ -1534,51 +1748,124 @@ def create_performance_analysis(data_processor: DataProcessor):
                 fig_style_revenue.update_layout(height=max(400, style_n * 15), yaxis={'categoryorder': 'total ascending'})
                 st.plotly_chart(fig_style_revenue, use_container_width=True)
 
-            # Color breakdown for each top style
+            # Color breakdown for styles with dropdown selector
             st.markdown("---")
             st.subheader("🎨 Color Performance by Style")
 
-            for _, style_row in top_styles.iterrows():
-                style_code = style_row['Style Code']
-                style_data = style_sales[style_sales['Style Code'] == style_code]
+            if not top_styles.empty:
+                # Create dropdown for style selection
+                style_options = ["Select a Style"] + top_styles['Style Code'].tolist()
+                selected_style_for_colors = st.selectbox(
+                    "Choose Style Code to View Color Performance:",
+                    options=style_options,
+                    key="color_style_selector"
+                )
 
-                # Group by color for this style
-                color_breakdown = style_data.groupby('Shade Code').agg({
+                if selected_style_for_colors != "Select a Style":
+                    style_data = style_sales[style_sales['Style Code'] == selected_style_for_colors]
+
+                    # Group by normalized color for this style
+                    color_breakdown = style_data.groupby('Shade_Code_Normalized').agg({
                     'Qty': 'sum',
                     'Value': 'sum'
                 }).reset_index()
 
-                if not color_breakdown.empty:
-                    color_breakdown = color_breakdown.sort_values('Qty', ascending=False)
+                    if not color_breakdown.empty:
+                        color_breakdown = color_breakdown.sort_values('Qty', ascending=False)
 
-                    st.markdown(f"**{style_code} - Color Performance**")
-                    fig_color = px.bar(
-                        color_breakdown.head(10),  # Show top 10 colors
-                        x='Qty',
-                        y='Shade Code',
-                        title=f"{style_code} - Colors by Quantity Sold",
-                        color='Qty',
-                        color_continuous_scale=['#FF0000', '#00FF00'],  # Red to Green
-                        orientation='h'
-                    )
-                    fig_color.update_layout(height=300, yaxis={'categoryorder': 'total ascending'})
-                    st.plotly_chart(fig_color, use_container_width=True)
-                    st.markdown("---")
+                        st.markdown(f"**{selected_style_for_colors} - Color Performance**")
+
+                        # Create two columns for quantity and value
+                        col_qty, col_val = st.columns(2)
+
+                        with col_qty:
+                            st.markdown("**Colors by Quantity Sold**")
+                            fig_color_qty = px.bar(
+                                color_breakdown.head(15),  # Show top 15 colors
+                            x='Qty',
+                                y='Shade_Code_Normalized',
+                                title=f"{selected_style_for_colors} - Colors by Quantity",
+                            color='Qty',
+                            color_continuous_scale=['#FF0000', '#00FF00'],  # Red to Green
+                            orientation='h'
+                        )
+                            fig_color_qty.update_layout(height=max(400, len(color_breakdown.head(15)) * 20), yaxis={'categoryorder': 'total ascending'})
+                            st.plotly_chart(fig_color_qty, use_container_width=True)
+
+                        with col_val:
+                            st.markdown("**Colors by Revenue**")
+                            fig_color_val = px.bar(
+                                color_breakdown.head(15),  # Show top 15 colors
+                                x='Value',
+                                y='Shade_Code_Normalized',
+                                title=f"{selected_style_for_colors} - Colors by Revenue",
+                                color='Value',
+                                color_continuous_scale=['#FF0000', '#00FF00'],  # Red to Green
+                                orientation='h'
+                            )
+                            fig_color_val.update_layout(height=max(400, len(color_breakdown.head(15)) * 20), yaxis={'categoryorder': 'total ascending'})
+                            st.plotly_chart(fig_color_val, use_container_width=True)
+
+                        # Show detailed breakdown table
+                        st.markdown("**Detailed Color Breakdown:**")
+                        display_colors = color_breakdown.copy()
+                        display_colors['Total_Quantity'] = display_colors['Qty'].astype(int)
+                        display_colors['Total_Value'] = display_colors['Value'].apply(lambda x: f"₹{format_indian_number(int(x))}")
+
+                        st.dataframe(display_colors[['Shade_Code_Normalized', 'Total_Quantity', 'Total_Value']].head(15))
+                    else:
+                        st.info(f"No color data available for style {selected_style_for_colors}")
+            else:
+                st.info("Please select a style code to view color performance details.")
         else:
-            st.info("No shirt or jeans data found in the selected filters.")
+            st.info("No style data available for color analysis.")
 
-    # Size and Color Analysis
+    # Size and Color Analysis with Style Code Filtering
     st.markdown("---")
     st.markdown("**Size & Color Analysis**")
 
+    # Add style code filter for size and color analysis
+    selected_brand_for_size_color = st.session_state.get('filter_brand', 'All Brands')
+    selected_product_code_for_size_color = st.session_state.get('filter_product_code', 'All Product Codes')
+
+    if selected_brand_for_size_color != "All Brands":
+        # Get available style codes for the selected brand and product code
+        if selected_product_code_for_size_color != "All Product Codes":
+            available_style_codes_for_analysis = get_style_codes_for_brand_product(
+                filtered_df if not filtered_df.empty else data_processor.sales_df,
+                selected_brand_for_size_color,
+                selected_product_code_for_size_color
+            )
+        else:
+            # Get all style codes for the selected brand
+            brand_data = filtered_df if not filtered_df.empty else data_processor.sales_df
+            brand_data = brand_data[brand_data['Brand Code'] == selected_brand_for_size_color]
+            available_style_codes_for_analysis = sorted(brand_data['Style Code'].dropna().unique()) if 'Style Code' in brand_data.columns else []
+    else:
+        available_style_codes_for_analysis = []
+
+    style_code_for_size_color = st.selectbox(
+        "Select Style Code for Size & Color Analysis:",
+        options=["All Style Codes"] + available_style_codes_for_analysis,
+        index=0,
+        key="size_color_style_filter"
+    )
+
+    # Apply style code filter if selected
+    if style_code_for_size_color != "All Style Codes":
+        analysis_df = filtered_df if not filtered_df.empty else data_processor.sales_df
+        analysis_df = analysis_df[analysis_df['Style Code'] == style_code_for_size_color]
+        st.info(f"🔍 Size & Color Analysis filtered for Style Code: {style_code_for_size_color}")
+    else:
+        analysis_df = filtered_df if not filtered_df.empty else data_processor.sales_df
 
     col3, col4 = st.columns(2)
 
     with col3:
         st.markdown("**Most Popular Sizes**")
 
-        if not sales_df.empty and 'Size' in sales_df.columns:
-            size_analysis = sales_df.groupby('Size').agg({
+        if not analysis_df.empty and 'Size' in analysis_df.columns:
+            size_analysis = analysis_df.groupby('Size').agg({
                 'Qty': 'sum',
                 'Value': 'sum'
             }).reset_index()
@@ -1589,11 +1876,16 @@ def create_performance_analysis(data_processor: DataProcessor):
             if not size_analysis.empty:
                 size_analysis = size_analysis.nlargest(top_n, 'Qty')
 
+                if style_code_for_size_color != "All Style Codes":
+                    title_suffix = f" (Style: {style_code_for_size_color})"
+                else:
+                    title_suffix = " (Filtered)"
+
                 fig_sizes = px.bar(
                     size_analysis,
                     x='Qty',
                     y='Size',
-                    title=f"Top {top_n} Most Popular Sizes",
+                    title=f"Top {top_n} Most Popular Sizes{title_suffix}",
                     color='Qty',
                     color_continuous_scale='blues',
                     orientation='h'
@@ -1601,116 +1893,189 @@ def create_performance_analysis(data_processor: DataProcessor):
                 fig_sizes.update_layout(height=max(400, len(size_analysis) * 15), yaxis={'categoryorder': 'total ascending'})
                 st.plotly_chart(fig_sizes, use_container_width=True)
 
+                # Show size details table
+                st.markdown("**Size Details:**")
+                display_sizes = size_analysis.copy()
+                display_sizes['Total_Quantity'] = display_sizes['Qty'].astype(int)
+                display_sizes['Total_Value'] = display_sizes['Value'].apply(lambda x: f"₹{format_indian_number(int(x))}")
+
+                st.dataframe(display_sizes[['Size', 'Total_Quantity', 'Total_Value']])
+
     with col4:
         st.markdown("**Color Analysis**")
 
-        if not sales_df.empty and 'Shade Code' in sales_df.columns:
-            color_analysis = sales_df.groupby(['Brand Code', 'Shade Code']).agg({
+        if not analysis_df.empty and 'Shade_Code_Normalized' in analysis_df.columns:
+            # Group by Style Code instead of Brand Code for more detailed analysis
+            if style_code_for_size_color != "All Style Codes":
+                color_analysis = analysis_df.groupby(['Style Code', 'Shade_Code_Normalized']).agg({
                 'Qty': 'sum',
                 'Value': 'sum'
             }).reset_index()
+                group_column = 'Style Code'
+                hover_column = 'Style Code'
+            else:
+                color_analysis = analysis_df.groupby(['Brand Code', 'Shade_Code_Normalized']).agg({
+                    'Qty': 'sum',
+                    'Value': 'sum'
+                }).reset_index()
+                group_column = 'Brand Code'
+                hover_column = 'Brand Code'
 
             # Filter out empty or invalid colors
-            color_analysis = color_analysis[color_analysis['Shade Code'].notna() & (color_analysis['Shade Code'] != '')]
+            color_analysis = color_analysis[color_analysis['Shade_Code_Normalized'].notna() & (color_analysis['Shade_Code_Normalized'] != '')]
 
             if not color_analysis.empty:
                 # Sort by quantity and get top N
                 color_analysis = color_analysis.nlargest(top_n, 'Qty')
 
-                # Add brand names
-                color_analysis['Brand Name'] = color_analysis['Brand Code'].apply(get_brand_name)
+                # Add display names - always use Style Code for more detailed analysis
+                if style_code_for_size_color != "All Style Codes":
+                    color_analysis['Display_Name'] = color_analysis['Style Code']
+                    table_title = "**Color-Style Breakdown:**"
+                else:
+                    # Even when no specific style is selected, show Style Code instead of Brand Name
+                    # Get style codes for each brand-color combination
+                    style_color_brand = analysis_df.groupby(['Brand Code', 'Shade_Code_Normalized', 'Style Code']).agg({
+                        'Qty': 'sum'
+                    }).reset_index()
+
+                    # For each brand-color, get the most popular style code
+                    style_color_brand = style_color_brand.sort_values(['Brand Code', 'Shade_Code_Normalized', 'Qty'], ascending=[True, True, False])
+                    style_color_brand = style_color_brand.drop_duplicates(['Brand Code', 'Shade_Code_Normalized'])
+
+                    # Merge back to get the most popular style for each brand-color combination
+                    color_analysis = color_analysis.merge(
+                        style_color_brand[['Brand Code', 'Shade_Code_Normalized', 'Style Code']],
+                        on=['Brand Code', 'Shade_Code_Normalized'],
+                        how='left'
+                    )
+
+                    color_analysis['Display_Name'] = color_analysis['Style Code']
+                    table_title = "**Color-Style Breakdown:**"
+
+                if style_code_for_size_color != "All Style Codes":
+                    title_suffix = f" (Style: {style_code_for_size_color})"
+                else:
+                    title_suffix = " (Filtered)"
 
                 fig_colors = px.bar(
                     color_analysis,
                     x='Qty',
-                    y='Shade Code',
-                    title=f"Top {top_n} Most Popular Colors",
+                    y='Shade_Code_Normalized',
+                    title=f"Top {top_n} Most Popular Colors{title_suffix}",
                     color='Qty',
                     color_continuous_scale='rainbow',
                     orientation='h',
-                    hover_data=['Brand Name', 'Brand Code']
+                    hover_data=['Display_Name', hover_column]
                 )
                 fig_colors.update_layout(height=max(400, len(color_analysis) * 15), yaxis={'categoryorder': 'total ascending'})
                 st.plotly_chart(fig_colors, use_container_width=True)
 
-                # Show detailed color-brand breakdown
-                st.write("**Color-Brand Breakdown:**")
+                # Show detailed color breakdown
+                st.write(table_title)
                 display_colors = color_analysis.copy()
                 display_colors['Total_Quantity'] = display_colors['Qty'].astype(int)
                 display_colors['Total_Value'] = display_colors['Value'].apply(lambda x: f"₹{format_indian_number(int(x))}")
 
-                st.dataframe(display_colors[['Brand Name', 'Brand Code', 'Shade Code', 'Total_Quantity', 'Total_Value']])
+                if style_code_for_size_color != "All Style Codes":
+                    st.dataframe(display_colors[['Display_Name', hover_column, 'Shade_Code_Normalized', 'Total_Quantity', 'Total_Value']])
+                else:
+                    st.dataframe(display_colors[['Display_Name', hover_column, 'Shade_Code_Normalized', 'Total_Quantity', 'Total_Value']])
 
-                # Size-Color combinations (most popular)
-                if 'Size' in sales_df.columns:
-                    size_color_analysis = sales_df.groupby(['Size', 'Shade Code', 'Brand Code']).agg({
+                # Size-Color combinations (most popular) - using filtered data
+                if 'Size' in analysis_df.columns:
+                    if style_code_for_size_color != "All Style Codes":
+                        size_color_analysis = analysis_df.groupby(['Size', 'Shade_Code_Normalized', 'Style Code']).agg({
                         'Qty': 'sum'
                     }).reset_index()
+                        group_column_sc = 'Style Code'
+                        table_title_sc = "**Top Size-Color Combinations (Style Filtered):**"
+                    else:
+                        size_color_analysis = analysis_df.groupby(['Size', 'Shade_Code_Normalized', 'Brand Code']).agg({
+                            'Qty': 'sum'
+                        }).reset_index()
+                        group_column_sc = 'Brand Code'
+                        table_title_sc = "**Top Size-Color Combinations (Filtered):**"
 
                     size_color_analysis = size_color_analysis[size_color_analysis['Size'].notna() & (size_color_analysis['Size'] != '')]
                     size_color_analysis = size_color_analysis.nlargest(10, 'Qty')
 
                     if not size_color_analysis.empty:
-                        st.write("**Top Size-Color Combinations:**")
+                        st.write(table_title_sc)
                         display_size_color = size_color_analysis.copy()
-                        display_size_color['Brand Name'] = display_size_color['Brand Code'].apply(get_brand_name)
+
+                        # Always show Style Code instead of Brand Name for more detailed analysis
+                        if style_code_for_size_color != "All Style Codes":
+                            display_size_color['Display_Name'] = display_size_color['Style Code']
+                        else:
+                            # For each size-color-brand combination, get the most popular style code
+                            size_style_color_brand = analysis_df.groupby(['Size', 'Shade_Code_Normalized', 'Brand Code', 'Style Code']).agg({
+                                'Qty': 'sum'
+                            }).reset_index()
+
+                            # Get the most popular style for each size-color-brand combination
+                            size_style_color_brand = size_style_color_brand.sort_values(['Size', 'Shade_Code_Normalized', 'Brand Code', 'Qty'], ascending=[True, True, True, False])
+                            size_style_color_brand = size_style_color_brand.drop_duplicates(['Size', 'Shade_Code_Normalized', 'Brand Code'])
+
+                            # Merge back to get the most popular style for each combination
+                            size_color_analysis = size_color_analysis.merge(
+                                size_style_color_brand[['Size', 'Shade_Code_Normalized', 'Brand Code', 'Style Code']],
+                                on=['Size', 'Shade_Code_Normalized', 'Brand Code'],
+                                how='left'
+                            )
+
+                            # Handle cases where Style Code might not exist after merge
+                            if 'Style Code' in display_size_color.columns:
+                                display_size_color['Display_Name'] = display_size_color['Style Code']
+                            else:
+                                display_size_color['Display_Name'] = display_size_color['Brand Code'] + ' - ' + display_size_color['Size'] + ' - ' + display_size_color['Shade_Code_Normalized']
+
                         display_size_color['Total_Quantity'] = display_size_color['Qty'].astype(int)
 
-                        st.dataframe(display_size_color[['Brand Name', 'Brand Code', 'Size', 'Shade Code', 'Total_Quantity']].head(10))
+                        if style_code_for_size_color != "All Style Codes":
+                            st.dataframe(display_size_color[['Display_Name', group_column_sc, 'Size', 'Shade_Code_Normalized', 'Total_Quantity']].head(10))
+                        else:
+                            st.dataframe(display_size_color[['Display_Name', group_column_sc, 'Size', 'Shade_Code_Normalized', 'Total_Quantity']].head(10))
 
-    # Product Category Analysis
+    # Product Category Analysis (Now using actual product codes from your sheet)
     st.markdown("**Product Category Analysis**")
 
-    if not sales_df.empty:
-        # Analyze product categories based on product codes
-        category_keywords = {
-            'T-Shirts': ['T-SHIRT', 'TEE', 'T SHIRT'],
-            'Shirts': ['SHIRT'],
-            'Trousers': ['TROUSER', 'PANT'],
-            'Jeans': ['JEANS', 'DENIM'],
-            'Jackets': ['JACKET', 'BLAZER'],
-            'Others': []
-        }
-
+    if not filtered_df.empty:
+        # Analyze product categories based on actual product codes from your sheet
+        # Group by the actual product codes (which are now our categories)
         category_data = []
-        for category, keywords in category_keywords.items():
-            if keywords:
-                # Filter products that match this category
-                mask = sales_df['Product Code'].str.contains('|'.join(keywords), case=False, na=False)
-                category_sales = sales_df[mask]
-            else:
-                # For 'Others', get products that don't match any other category
-                other_mask = pd.Series([True] * len(sales_df), index=sales_df.index)
-                for other_keywords in [v for k, v in category_keywords.items() if v]:
-                    other_mask &= ~sales_df['Product Code'].str.contains('|'.join(other_keywords), case=False, na=False)
-                category_sales = sales_df[other_mask]
+        category_analysis = filtered_df.groupby('Product Code').agg({
+            'Qty': 'sum',
+            'Value': 'sum'
+        }).reset_index()
 
-            if not category_sales.empty:
-                total_qty = int(category_sales['Qty'].sum())
-                total_value = category_sales['Value'].sum()
-                category_data.append({
-                    'Category': category,
-                    'Total_Quantity': total_qty,
-                    'Total_Value': total_value,
-                    'Average_Price': total_value / total_qty if total_qty > 0 else 0
-                })
+        for _, row in category_analysis.iterrows():
+            total_qty = int(row['Qty'])
+            total_value = row['Value']
+            category_data.append({
+                'Category': row['Product Code'],
+                'Total_Quantity': total_qty,
+                'Total_Value': total_value,
+                'Average_Price': total_value / total_qty if total_qty > 0 else 0
+            })
 
         if category_data:
             category_df = pd.DataFrame(category_data).sort_values('Total_Quantity', ascending=False)
 
-            # Create chart for product categories
+            # Create chart for product categories (showing actual product codes from your sheet)
             fig_categories = px.bar(
-                category_df,
+                category_df.head(top_n),
                 x='Category',
                 y='Total_Quantity',
-                title="Product Categories by Quantity Sold",
+                title=f"Product Codes by Quantity (Top {top_n}) - From Your Sheet",
                 color='Total_Quantity',
                 color_continuous_scale='viridis'
             )
-            fig_categories.update_layout(height=400)
+            fig_categories.update_layout(height=max(400, min(top_n, len(category_df)) * 15), xaxis_tickangle=-45)
             st.plotly_chart(fig_categories, use_container_width=True)
 
             # Show category breakdown table
+            st.markdown("**Product Code Breakdown (All Categories from Your Sheet):**")
             display_df = category_df.copy()
             display_df['Total_Quantity'] = display_df['Total_Quantity'].apply(format_indian_number)
             display_df['Total_Value'] = display_df['Total_Value'].apply(lambda x: f"₹{format_indian_number(int(x))}")
@@ -1862,14 +2227,101 @@ def create_product_analysis(data_processor: DataProcessor):
     sales_df = data_processor.sales_df if data_processor.sales_df is not None else pd.DataFrame()
     returns_df = data_processor.returns_df if data_processor.returns_df is not None else pd.DataFrame()
 
-    # Apply the same filtering logic as performance analysis
-    # Get filter values from session state
-    selected_brand = st.session_state.get('filter_brand', 'All Brands')
-    selected_category = st.session_state.get('filter_category', 'All Categories')
-    selected_color = st.session_state.get('filter_color', 'All Colors')
-    selected_size = st.session_state.get('filter_size', 'All Sizes')
+    # Check if we have data to work with
+    if sales_df.empty:
+        st.warning("⚠️ No sales data available. Please upload your data file first.")
+        return
 
-    filtered_df = get_filtered_data(sales_df, selected_brand, selected_category, selected_color, selected_size)
+    # Independent filtering system for Product Analysis
+    st.markdown("### 🎯 Product Analysis Filters")
+
+    col_filter1, col_filter2 = st.columns([1, 1])
+
+    with col_filter1:
+        # Brand Selection
+        available_brands = sorted(sales_df['Brand Code'].unique())
+        selected_brand = st.selectbox(
+            "Select Brand:",
+            options=["All Brands"] + available_brands,
+            index=0,
+            key="product_analysis_brand"
+        )
+
+    with col_filter2:
+        # Category Selection (Product Codes)
+        if selected_brand != "All Brands":
+            brand_data = sales_df[sales_df['Brand Code'] == selected_brand]
+            available_categories = sorted(brand_data['Product Code'].dropna().unique())
+        else:
+            available_categories = sorted(sales_df['Product Code'].dropna().unique())
+
+        selected_category = st.selectbox(
+            "Select Product Category:",
+            options=["All Categories"] + available_categories,
+            index=0,
+            key="product_analysis_category"
+        )
+
+    col_filter3, col_filter4 = st.columns([1, 1])
+
+    with col_filter3:
+        # Color Selection
+        if selected_brand != "All Brands" and selected_category != "All Categories":
+            filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
+                                   (sales_df['Product Code'] == selected_category)]
+        elif selected_brand != "All Brands":
+            filtered_data = sales_df[sales_df['Brand Code'] == selected_brand]
+        else:
+            filtered_data = sales_df
+
+        available_colors = sorted(filtered_data['Shade_Code_Normalized'].dropna().unique()) if 'Shade_Code_Normalized' in filtered_data.columns else []
+        selected_color = st.selectbox(
+            "Select Color:",
+            options=["All Colors"] + available_colors,
+            index=0,
+            key="product_analysis_color"
+        )
+
+    with col_filter4:
+        # Size Selection
+        if selected_brand != "All Brands" and selected_category != "All Categories" and selected_color != "All Colors":
+            filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
+                                   (sales_df['Product Code'] == selected_category) &
+                                   (sales_df['Shade_Code_Normalized'] == selected_color)]
+        elif selected_brand != "All Brands" and selected_category != "All Categories":
+            filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
+                                   (sales_df['Product Code'] == selected_category)]
+        elif selected_brand != "All Brands":
+            filtered_data = sales_df[sales_df['Brand Code'] == selected_brand]
+        else:
+            filtered_data = sales_df
+
+        available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
+        selected_size = st.selectbox(
+            "Select Size:",
+            options=["All Sizes"] + available_sizes,
+            index=0,
+            key="product_analysis_size"
+        )
+
+    # Apply filters
+    filtered_df = get_filtered_data(sales_df, selected_brand, selected_category, color=selected_color, size=selected_size)
+
+    # Show filter summary and data counts
+    filter_summary = []
+    if selected_brand != "All Brands":
+        filter_summary.append(f"Brand: {get_brand_name(selected_brand)}")
+    if selected_category != "All Categories":
+        filter_summary.append(f"Category: {selected_category}")
+    if selected_color != "All Colors":
+        filter_summary.append(f"Color: {selected_color}")
+    if selected_size != "All Sizes":
+        filter_summary.append(f"Size: {selected_size}")
+
+    st.info(f"📊 Total sales data: {len(sales_df):,} transactions")
+    if filter_summary:
+        st.info(f"🔍 Active filters: {', '.join(filter_summary)}")
+    st.info(f"📈 Filtered data: {len(filtered_df):,} transactions")
 
     # Calculate insights based on filtered data
     if not filtered_df.empty:
@@ -1905,6 +2357,8 @@ def create_product_analysis(data_processor: DataProcessor):
             fig = px.bar(top_products_qty_display, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_qty} Products by Quantity")
             fig.update_layout(height=max(400, top_n_qty * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No product data available for quantity analysis. Please check your filters or data source.")
 
     with col2:
         st.subheader("💎 Top Products by Revenue")
@@ -1924,6 +2378,8 @@ def create_product_analysis(data_processor: DataProcessor):
             fig = px.bar(top_products_value_display, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_value} Products by Revenue")
             fig.update_layout(height=max(400, top_n_value * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No product data available for revenue analysis. Please check your filters or data source.")
 
 def create_price_discount_analysis(data_processor: DataProcessor):
     """Create price and discount analysis tab"""
@@ -2021,10 +2477,32 @@ def create_returns_analysis(data_processor: DataProcessor):
     # Apply the same filtering logic as performance analysis
     selected_brand = st.session_state.get('filter_brand', 'All Brands')
     selected_category = st.session_state.get('filter_category', 'All Categories')
+    selected_product_code = st.session_state.get('filter_product_code', 'All Product Codes')
+    selected_style_code = st.session_state.get('filter_style_code', 'All Style Codes')
     selected_color = st.session_state.get('filter_color', 'All Colors')
     selected_size = st.session_state.get('filter_size', 'All Sizes')
 
-    filtered_returns_df = get_filtered_data(returns_df, selected_brand, selected_category, selected_color, selected_size)
+    filtered_returns_df = get_filtered_data(returns_df, selected_brand, selected_category,
+                                          selected_product_code, selected_style_code, selected_color, selected_size)
+
+    # Show returns filter summary
+    returns_filter_summary = []
+    if selected_brand != "All Brands":
+        returns_filter_summary.append(f"Brand: {get_brand_name(selected_brand)}")
+    if selected_product_code != "All Product Codes":
+        returns_filter_summary.append(f"Product Code: {selected_product_code}")
+    if selected_category != "All Categories":
+        returns_filter_summary.append(f"Product Category: {selected_category}")
+    if selected_style_code != "All Style Codes":
+        returns_filter_summary.append(f"Style Code: {selected_style_code}")
+    if selected_color != "All Colors":
+        returns_filter_summary.append(f"Color: {selected_color}")
+    if selected_size != "All Sizes":
+        returns_filter_summary.append(f"Size: {selected_size}")
+
+    if returns_filter_summary:
+        st.info(f"🔄 Returns - Active Filters: {', '.join(returns_filter_summary)}")
+        st.info(f"📊 Returns Filtered Results: {len(filtered_returns_df):,} returns")
 
     # Calculate return analysis based on filtered data
     if not filtered_returns_df.empty:
@@ -2098,6 +2576,64 @@ def create_returns_analysis(data_processor: DataProcessor):
         least_returns_table = least_returns[['Brand_Product', 'Qty']].copy()
         least_returns_table['Qty'] = least_returns_table['Qty'].astype(int)
         st.dataframe(least_returns_table, use_container_width=True)
+
+    # Returns Color Analysis - new section for brand-specific color returns
+    if selected_brand != "All Brands" and not filtered_returns_df.empty:
+        st.markdown("---")
+        st.subheader("🎨 Returns by Color (Brand-Specific)")
+
+        # Group returns by color for the selected brand
+        if 'Shade_Code_Normalized' in filtered_returns_df.columns:
+            color_returns = filtered_returns_df.groupby(['Brand Code', 'Shade_Code_Normalized']).agg({
+                'Qty': lambda x: abs(x.sum()),
+                'Value': lambda x: abs(x.sum())
+            }).reset_index()
+
+            color_returns = color_returns[color_returns['Shade_Code_Normalized'].notna() & (color_returns['Shade_Code_Normalized'] != '')]
+
+            if not color_returns.empty:
+                color_returns = color_returns.sort_values('Qty', ascending=False)
+
+                col_cr1, col_cr2 = st.columns(2)
+
+                with col_cr1:
+                    st.markdown("**Colors Returned Most**")
+                    fig_color_returns = px.bar(
+                        color_returns.head(10),
+                        x='Qty',
+                        y='Shade_Code_Normalized',
+                        title=f"Top Returned Colors - {get_brand_name(selected_brand)}",
+                        color='Qty',
+                        color_continuous_scale=['#FF0000', '#8B0000'],  # Red for worst (most returns)
+                        orientation='h'
+                    )
+                    fig_color_returns.update_layout(height=max(300, len(color_returns.head(10)) * 20), yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_color_returns, use_container_width=True)
+
+                with col_cr2:
+                    st.markdown("**Return Value by Color**")
+                    fig_color_return_val = px.bar(
+                        color_returns.head(10),
+                        x='Value',
+                        y='Shade_Code_Normalized',
+                        title=f"Return Value by Color - {get_brand_name(selected_brand)}",
+                        color='Value',
+                        color_continuous_scale=['#FF0000', '#8B0000'],  # Red for worst
+                        orientation='h'
+                    )
+                    fig_color_return_val.update_layout(height=max(300, len(color_returns.head(10)) * 20), yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_color_return_val, use_container_width=True)
+
+                # Show detailed color returns table
+                st.markdown("**Detailed Color Returns:**")
+                display_color_returns = color_returns.copy()
+                display_color_returns['Total_Returns'] = display_color_returns['Qty'].astype(int)
+                display_color_returns['Return_Value'] = display_color_returns['Value'].apply(lambda x: f"₹{format_indian_number(int(x))}")
+                display_color_returns['Brand Name'] = display_color_returns['Brand Code'].apply(get_brand_name)
+
+                st.dataframe(display_color_returns[['Brand Name', 'Brand Code', 'Shade_Code_Normalized', 'Total_Returns', 'Return_Value']].head(10))
+            else:
+                st.info(f"No color return data available for {get_brand_name(selected_brand)}")
 
     # Additional analysis section
     st.markdown("---")
