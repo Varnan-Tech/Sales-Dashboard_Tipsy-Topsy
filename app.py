@@ -9,6 +9,7 @@ import warnings
 import os
 import json
 import hashlib
+import re
 from typing import Dict, List, Tuple, Any
 
 # Import insights generator (will be used after DataProcessor is defined)
@@ -191,6 +192,28 @@ def get_product_categories(df):
 
     return sorted_categories
 
+def get_normalized_categories(df):
+    """Get available normalized product categories from dataframe"""
+    if df is None or df.empty or 'Normalized_Category' not in df.columns:
+        return {}
+
+    # Get all unique normalized categories
+    unique_categories = df['Normalized_Category'].dropna().unique()
+
+    # Create categories dictionary using normalized categories as keys
+    categories_found = {}
+
+    for category in unique_categories:
+        category_str = str(category).strip()
+        if category_str and category_str != 'nan' and category_str != '' and category_str != 'OTHER':
+            # Use the normalized category
+            categories_found[category_str] = True
+
+    # Sort categories for consistent display
+    sorted_categories = dict(sorted(categories_found.items()))
+
+    return sorted_categories
+
 def get_product_codes_for_brand(df, brand):
     """Get available product codes for a specific brand"""
     if df is None or df.empty or brand == "All Brands":
@@ -206,147 +229,6 @@ def get_style_codes_for_brand_product(df, brand, product_code):
 
     filtered_data = df[(df['Brand Code'] == brand) & (df['Product Code'] == product_code)]
     return sorted(filtered_data['Style Code'].dropna().unique())
-
-
-def normalize_product_category(product_code):
-    """
-    Normalize product codes into standardized categories.
-    Groups similar products together to reduce complexity.
-    """
-    if not product_code or pd.isna(product_code):
-        return 'OTHER'
-
-    # Convert to uppercase for case-insensitive matching
-    code = str(product_code).upper().strip()
-
-    # Product category mapping
-    category_mapping = {
-        # T-Shirts (including sweatshirts, knit shirts)
-        'T-SHIRT': 'T-SHIRT',
-        'T-SHIRTS': 'T-SHIRT',
-        'T-SHIRT-3PCK': 'T-SHIRT',
-        'SWEAT SHIRT': 'T-SHIRT',
-        'SWEATSHIRT': 'T-SHIRT',
-        'KNIT SHIRT': 'T-SHIRT',
-
-        # Shirts (formal/formal-casual shirts)
-        'SHIRT': 'SHIRT',
-        'SHIRTS': 'SHIRT',
-        'POLO SHIRT': 'SHIRT',
-        'POLO': 'SHIRT',
-
-        # Bags (all types of bags)
-        'BAG': 'BAGS',
-        'BAGS': 'BAGS',
-        'PROMO BAG': 'BAGS',
-        'BACKPACK': 'BAGS',
-        'DUFFLE BAG': 'BAGS',
-        'TRAVEL BAG': 'BAGS',
-        'TROLLEY BAG': 'BAGS',
-
-        # Trousers/Pants (all types of pants/trousers)
-        'TROUSER': 'TROUSERS',
-        'PANT': 'TROUSERS',
-        'PANTS': 'TROUSERS',
-        'CARGO': 'TROUSERS',
-        'CARGO PANT': 'TROUSERS',
-        'CARGOS': 'TROUSERS',
-        'CHINO': 'TROUSERS',
-        'DENIM PANT': 'TROUSERS',
-        'FGTROUSER': 'TROUSERS',
-
-        # Jeans
-        'JEANS': 'JEANS',
-
-        # Shorts
-        'SHORTS': 'SHORTS',
-        'SHORTS BERMUDA': 'SHORTS',
-        'JOGGER': 'SHORTS',
-
-        # Jackets/Outerwear
-        'JACKET': 'JACKETS',
-        'SHACKET': 'JACKETS',
-        'OUTERWEAR': 'JACKETS',
-        'HOODY': 'JACKETS',
-
-        # Sweaters/Sweatshirts
-        'SWEATER': 'SWEATERS',
-        'SWEATERS': 'SWEATERS',
-        'SWEATS': 'SWEATERS',
-
-        # Underwear
-        'BOXER': 'UNDERWEAR',
-        'BRIEF': 'UNDERWEAR',
-        'BRIEF-2PCK': 'UNDERWEAR',
-        'BRIEF-3PCK': 'UNDERWEAR',
-        'VEST': 'UNDERWEAR',
-        'VEST-2PCK': 'UNDERWEAR',
-        'LOWER': 'UNDERWEAR',
-
-        # Accessories
-        'BELT': 'ACCESSORIES',
-        'CAP': 'ACCESSORIES',
-        'CAPS': 'ACCESSORIES',
-        'SOCKS-3PCK': 'ACCESSORIES',
-        'ACCESSORY': 'ACCESSORIES',
-
-        # Bottoms (general bottoms category)
-        'BOTTOM': 'BOTTOMS',
-        'DENIM': 'BOTTOMS',
-        'NON DENIM': 'BOTTOMS',
-        'KNIT DENIM': 'BOTTOMS',
-
-        # Speakers/Audio
-        'SPEAKER': 'SPEAKERS',
-        'SPEAKERS': 'SPEAKERS',
-
-        # Deodorants
-        'DEO': 'DEO',
-
-        # Tailoring
-        'TAILORING': 'TAILORING',
-
-        # Special categories
-        'PI': 'PI',
-        'TOP': 'TOP',
-        'TRIPACK': 'TRIPACK',
-        'FLATKNITS': 'FLATKNITS',
-        'UASPKRAS002': 'OTHER'  # Generic/other codes
-    }
-
-    # Direct mapping
-    if code in category_mapping:
-        return category_mapping[code]
-
-    # Keyword-based mapping for codes not in direct mapping
-    # This handles variations we might have missed
-    if 'T-SHIRT' in code or 'TSHIRT' in code:
-        return 'T-SHIRT'
-    elif 'SHIRT' in code and 'T-SHIRT' not in code:
-        return 'SHIRT'
-    elif any(word in code for word in ['BAG', 'BACKPACK', 'DUFFLE', 'TRAVEL', 'TROLLEY']):
-        return 'BAGS'
-    elif any(word in code for word in ['TROUSER', 'PANT', 'CARGO', 'CHINO']):
-        return 'TROUSERS'
-    elif 'JEAN' in code:
-        return 'JEANS'
-    elif 'SHORT' in code:
-        return 'SHORTS'
-    elif any(word in code for word in ['JACKET', 'SHACKET', 'OUTER']):
-        return 'JACKETS'
-    elif any(word in code for word in ['SWEATER', 'SWEAT']):
-        return 'SWEATERS'
-    elif any(word in code for word in ['BOXER', 'BRIEF', 'VEST']):
-        return 'UNDERWEAR'
-    elif any(word in code for word in ['BELT', 'CAP', 'SOCK']):
-        return 'ACCESSORIES'
-    elif any(word in code for word in ['BOTTOM', 'DENIM']):
-        return 'BOTTOMS'
-    elif 'SPEAKER' in code:
-        return 'SPEAKERS'
-
-    # If no mapping found, return the original code (but try to clean it)
-    return code
 
 def normalize_shade_codes(df):
     """Normalize shade codes to handle wide ranges (200s vs 900s)"""
@@ -392,10 +274,11 @@ def get_filtered_data(df, brand=None, category=None, product_code=None, style_co
     if brand and brand != "All Brands":
         filtered_df = filtered_df[filtered_df['Brand Code'] == brand]
 
-    # Category filter - now uses normalized product categories
+    # Category filter - now uses exact product code matching since categories are product codes
     if category and category != "All Categories":
-        # Use the normalized product categories for filtering
-        mask = filtered_df['Product_Category'] == category
+        # Since categories are now the actual product codes from the sheet,
+        # we do exact matching instead of keyword matching
+        mask = filtered_df['Product Code'] == category
         filtered_df = filtered_df[mask]
 
     # Product Code filter
@@ -409,6 +292,58 @@ def get_filtered_data(df, brand=None, category=None, product_code=None, style_co
     # Color filter
     if color and color != "All Colors" and 'Shade Code' in filtered_df.columns:
         filtered_df = filtered_df[filtered_df['Shade Code'] == color]
+
+    # Size filter
+    if size and size != "All Sizes" and 'Size' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Size'] == size]
+
+    return filtered_df
+
+def get_filtered_data_normalized(df, brand=None, category=None, color=None, size=None):
+    """Apply multi-level filtering to dataframe using normalized categories for product analysis"""
+    filtered_df = df.copy()
+
+    # Brand filter
+    if brand and brand != "All Brands":
+        filtered_df = filtered_df[filtered_df['Brand Code'] == brand]
+
+    # Category filter - uses normalized categories instead of raw product codes
+    if category and category != "All Categories":
+        filtered_df = filtered_df[filtered_df['Normalized_Category'] == category]
+
+    # Color filter
+    if color and color != "All Colors" and 'Shade_Code_Normalized' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Shade_Code_Normalized'] == color]
+
+    # Size filter
+    if size and size != "All Sizes" and 'Size' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Size'] == size]
+
+    return filtered_df
+
+def get_filtered_data_performance(df, brand=None, category=None, product_code=None, style_code=None, color=None, size=None):
+    """Apply multi-level filtering for performance analysis using normalized categories"""
+    filtered_df = df.copy()
+
+    # Brand filter
+    if brand and brand != "All Brands":
+        filtered_df = filtered_df[filtered_df['Brand Code'] == brand]
+
+    # Category filter - now uses normalized categories
+    if category and category != "All Categories":
+        filtered_df = filtered_df[filtered_df['Normalized_Category'] == category]
+
+    # Product Code filter
+    if product_code and product_code != "All Product Codes" and 'Product Code' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Product Code'] == product_code]
+
+    # Style Code filter
+    if style_code and style_code != "All Style Codes" and 'Style Code' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Style Code'] == style_code]
+
+    # Color filter
+    if color and color != "All Colors" and 'Shade_Code_Normalized' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Shade_Code_Normalized'] == color]
 
     # Size filter
     if size and size != "All Sizes" and 'Size' in filtered_df.columns:
@@ -660,13 +595,268 @@ class DataProcessor:
             st.error(f"Error processing data: {str(e)}")
             return False
 
+    def _normalize_product_categories(self):
+        """Intelligently normalize product categories to group similar items"""
+        if self.df is None or self.df.empty or 'Product Code' not in self.df.columns:
+            return
+
+        def normalize_category(product_name):
+            """Normalize a single product name to a standard category"""
+            if pd.isna(product_name):
+                return 'OTHER'
+
+            # Convert to string and clean
+            product = str(product_name).strip().upper()
+
+            # Remove common suffixes/prefixes that don't affect category
+            product = re.sub(r'\s+', ' ', product)  # Normalize spaces
+            product = re.sub(r'[^\w\s-]', '', product)  # Remove special chars except - and space
+
+            # Remove quantity indicators
+            product = re.sub(r'-\d+PCK?$', '', product)  # Remove -3PCK, -2PC, etc.
+            product = re.sub(r'\d+PCK?\s*$', '', product)  # Remove 3PCK at end
+            product = re.sub(r'\s+\d+$', '', product)  # Remove trailing numbers
+
+            # Remove common size/style indicators that don't define category
+            product = re.sub(r'\b(S|M|L|XL|XXL|XXXL)\b', '', product)
+            product = re.sub(r'\b(\d{2,3})\b', '', product)  # Remove size numbers like 32, 34, etc.
+
+            # Clean up extra spaces and dashes
+            product = re.sub(r'\s+', ' ', product).strip()
+            product = re.sub(r'-+', '-', product).strip('-')
+
+            # Split into words for analysis
+            words = product.split()
+
+            # Common category mappings (case-insensitive root matching)
+            category_mappings = {
+                'T-SHIRT': ['TSHIRT', 'TEE', 'T SHIRT', 'T-SHIRT'],
+                'SHIRT': ['SHIRT', 'SHIRTS'],
+                'JEANS': ['JEAN', 'JEANS', 'DENIM'],
+                'TROUSER': ['TROUSER', 'TROUSERS', 'PANT', 'PANTS', 'CHINO'],
+                'SHORT': ['SHORT', 'SHORTS'],
+                'JACKET': ['JACKET', 'JACKETS', 'COAT', 'COATS', 'BLAZER'],
+                'HOODIE': ['HOODIE', 'HOODIES', 'SWEATSHIRT'],
+                'SWEATER': ['SWEATER', 'SWEATERS', 'PULLOVER', 'CARDIGAN'],
+                'DRESS': ['DRESS', 'DRESSES', 'GOWN', 'GOWNS'],
+                'SKIRT': ['SKIRT', 'SKIRTS'],
+                'TOP': ['TOP', 'TOPS', 'BLOUSE', 'BLOUSES'],
+                'BAG': ['BAG', 'BAGS', 'BACKPACK', 'DUFFLE', 'TRAVEL', 'TROLLEY', 'HANDBAG'],
+                'SHOE': ['SHOE', 'SHOES', 'SNEAKER', 'SNEAKERS', 'BOOT', 'BOOTS', 'SANDAL'],
+                'SANDAL': ['SANDAL', 'SANDALS', 'SLIPPER', 'SLIPPERS'],
+                'WATCH': ['WATCH', 'WATCHES'],
+                'JEWELRY': ['JEWELRY', 'JEWELLERY', 'NECKLACE', 'EARRING', 'BRACELET', 'RING'],
+                'ACCESSORY': ['ACCESSORY', 'ACCESSORIES', 'BELT', 'HAT', 'CAP', 'SCARF'],
+                'INNERWEAR': ['UNDERWEAR', 'UNDERGARMENT', 'BRA', 'PANTY', 'BOXER', 'BRIEFS'],
+                'SOCK': ['SOCK', 'SOCKS'],
+                'GLOVE': ['GLOVE', 'GLOVES'],
+                'CAP': ['CAP', 'HAT', 'BEANIE'],
+                'BELT': ['BELT', 'BELTS'],
+                'SUNGLASS': ['SUNGLASS', 'SUNGLASSES', 'GLASSES'],
+                'PERFUME': ['PERFUME', 'FRAGRANCE', 'DEODORANT'],
+                'COSMETIC': ['COSMETIC', 'COSMETICS', 'MAKEUP', 'LIPSTICK', 'FOUNDATION'],
+                'POLO': ['POLO', 'POLOS']
+            }
+
+            # Check if any word matches our category keywords
+            for category, keywords in category_mappings.items():
+                for keyword in keywords:
+                    # Check if keyword appears in the product name
+                    if keyword in product or any(keyword in word for word in words):
+                        return category
+
+            # Enhanced similarity matching for plural/singular variations
+            def get_similarity_score(word1, word2):
+                """Calculate similarity score between two words"""
+                if not word1 or not word2:
+                    return 0
+
+                word1, word2 = word1.upper(), word2.upper()
+
+                # Exact match
+                if word1 == word2:
+                    return 1.0
+
+                # Normalize plural forms - comprehensive plural/singular handling
+                def normalize_plurals(word):
+                    """Convert word to its base singular form"""
+                    # Handle common plural endings
+                    if word.endswith('IES') and len(word) > 3:
+                        return word[:-3] + 'Y'  # COMPANIES -> COMPANY
+                    elif word.endswith('VES') and len(word) > 3:
+                        return word[:-3] + 'F'  # LEAVES -> LEAF (though not common in products)
+                    elif word.endswith('ES'):
+                        if word.endswith(('CHES', 'SHES', 'SSES', 'XES')):
+                            return word[:-2]  # CHURCHES -> CHURCH, BUSSES -> BUSS, BOXES -> BOX
+                        elif word.endswith('IES'):
+                            return word[:-3] + 'Y'  # COMPANIES -> COMPANY
+                        else:
+                            return word[:-1]  # SHOES -> SHOE, BOXES -> BOX
+                    elif word.endswith('S') and not word.endswith(('SS', 'US', 'IS')):
+                        return word[:-1]  # SHIRTS -> SHIRT, PANTS -> PANT
+                    else:
+                        return word
+
+                # Get base forms for comparison
+                base1 = normalize_plurals(word1)
+                base2 = normalize_plurals(word2)
+
+                # If base forms match, high similarity
+                if base1 == base2:
+                    return 0.95
+
+                # Handle common plural/singular variations with different endings
+                if word1.endswith('S') and word1[:-1] == word2:
+                    return 0.95  # SHIRT -> SHIRTS
+                if word2.endswith('S') and word2[:-1] == word1:
+                    return 0.95  # SHIRTS -> SHIRT
+
+                if word1.endswith('ES') and word1[:-2] == word2:
+                    return 0.95  # SHOE -> SHOES
+                if word2.endswith('ES') and word2[:-2] == word1:
+                    return 0.95  # SHOES -> SHOE
+
+                # Handle Y -> IES variations
+                if word1.endswith('IES') and word1[:-3] + 'Y' == word2:
+                    return 0.95  # COMPANIES -> COMPANY
+                if word2.endswith('IES') and word2[:-3] + 'Y' == word1:
+                    return 0.95  # COMPANY -> COMPANIES
+
+                # Handle common endings that don't affect meaning
+                endings = ['ING', 'ED', 'ER', 'EST', 'LY', 'FUL', 'NESS', 'MENT', 'TION', 'ABLE', 'IBLE']
+                for ending in endings:
+                    if word1.endswith(ending) and word1[:-len(ending)] == word2:
+                        return 0.9
+                    if word2.endswith(ending) and word2[:-len(ending)] == word1:
+                        return 0.9
+
+                # Handle common letter swaps and variations
+                # Y/I, PH/F, CK/K, etc.
+                variations = [
+                    ('PH', 'F'), ('F', 'PH'),  # TELEPHONE/TELEFONE
+                    ('CK', 'K'), ('K', 'CK'),  # CHECK/CHEQUE
+                    ('Y', 'I'), ('I', 'Y'),    # STYLE/STILE
+                    ('AE', 'E'), ('E', 'AE'),  # ENCYCLOPAEDIA/ENCYCLOPEDIA
+                    ('OE', 'E'), ('E', 'OE'),  # MANOEUVRE/MANEUVER
+                ]
+
+                for var1, var2 in variations:
+                    if var1 in word1 and word1.replace(var1, var2) == word2:
+                        return 0.9
+                    if var1 in word2 and word2.replace(var1, var2) == word1:
+                        return 0.9
+
+                # Length-based similarity
+                len1, len2 = len(word1), len(word2)
+                if abs(len1 - len2) > 3:  # Allow more leniency
+                    return 0
+
+                # Character overlap with position weighting
+                set1, set2 = set(word1), set(word2)
+                intersection = len(set1 & set2)
+                union = len(set1 | set2)
+                if union == 0:
+                    return 0
+
+                jaccard = intersection / union
+
+                # Prefix/suffix matching with better weighting
+                min_len = min(len1, len2)
+                if min_len >= 3:  # Reduced threshold
+                    prefix_match = 0
+                    suffix_match = 0
+
+                    # Prefix matching (more important for product names)
+                    for i in range(1, min_len + 1):
+                        if word1[:i] == word2[:i]:
+                            prefix_match = i
+                        else:
+                            break
+
+                    # Suffix matching
+                    for i in range(1, min_len + 1):
+                        if word1[-i:] == word2[-i:]:
+                            suffix_match = i
+                        else:
+                            break
+
+                    prefix_score = prefix_match / min_len
+                    suffix_score = suffix_match / min_len
+
+                    # For short words, prefix is more important
+                    if min_len <= 5:
+                        return (jaccard * 0.3 + prefix_score * 0.4 + suffix_score * 0.3)
+                    else:
+                        return (jaccard * 0.4 + prefix_score * 0.3 + suffix_score * 0.3)
+
+                return jaccard
+
+            # Try enhanced similarity matching
+            if words:
+                first_word = words[0]
+
+                # First check against all category names directly
+                for category in category_mappings.keys():
+                    score = get_similarity_score(first_word, category)
+                    if score >= 0.75:  # Lower threshold for better grouping
+                        return category
+
+                # Then check against all keywords
+                for category, keywords in category_mappings.items():
+                    for keyword in keywords:
+                        score = get_similarity_score(first_word, keyword)
+                        if score >= 0.75:  # Lower threshold for better grouping
+                            return category
+
+                # Check similarity against category names for all words
+                for word in words[:2]:  # Check first two words
+                    for category in category_mappings.keys():
+                        score = get_similarity_score(word, category)
+                        if score >= 0.8:
+                            return category
+
+            # If still no match, create a simplified version
+            # Remove numbers, keep only letters and spaces
+            simplified = re.sub(r'[^A-Z\s]', '', product).strip()
+
+            # Apply similarity matching to simplified version
+            simplified_words = simplified.split()
+            if simplified_words:
+                first_simplified = simplified_words[0]
+
+                # Check if simplified word matches any category
+                for category in category_mappings.keys():
+                    score = get_similarity_score(first_simplified, category)
+                    if score >= 0.75:
+                        return category
+
+                # Check if simplified word matches any keyword
+                for category, keywords in category_mappings.items():
+                    for keyword in keywords:
+                        score = get_similarity_score(first_simplified, keyword)
+                        if score >= 0.75:
+                            return category
+
+            # If simplified version is short and meaningful, use it as category
+            if len(simplified) <= 15 and simplified and not any(char.isdigit() for char in simplified):
+                return simplified
+
+            # Last resort - use first word if it's meaningful and not just numbers
+            if words and len(words[0]) > 2 and not words[0].isdigit():
+                return words[0]
+
+            return 'OTHER'
+
+        # Apply normalization to create new column
+        self.df['Normalized_Category'] = self.df['Product Code'].apply(normalize_category)
+
     def _add_computed_columns(self):
         """Add computed columns for analysis"""
-        # Brand-Product combination
-        self.df['Brand_Product'] = self.df['Brand Code'] + ' - ' + self.df['Product Code']
+        # First normalize product categories
+        self._normalize_product_categories()
 
-        # Normalized product category (groups similar products together)
-        self.df['Product_Category'] = self.df['Product Code'].apply(normalize_product_category)
+        # Brand-Product combination (using normalized categories instead of raw codes)
+        self.df['Brand_Product'] = self.df['Brand Code'] + ' - ' + self.df['Normalized_Category']
 
         # Profit calculation (MRP - Cost)
         self.df['Profit'] = self.df['MRP'] - self.df['Cost']
@@ -695,6 +885,7 @@ class DataProcessor:
         insights['net_revenue'] = insights['total_revenue'] - insights['total_return_value']
         insights['unique_products'] = self.sales_df['Product Code'].nunique() if self.sales_df is not None else 0
         insights['unique_brands'] = self.sales_df['Brand Code'].nunique() if self.sales_df is not None else 0
+        insights['unique_normalized_categories'] = self.sales_df['Normalized_Category'].nunique() if self.sales_df is not None and 'Normalized_Category' in self.sales_df.columns else 0
 
         # Store full dataset metrics (before any filtering)
         full_sales_df = self.df[self.df['Tran Type'] == 'Sales'].copy() if self.df is not None else None
@@ -1365,39 +1556,69 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
         return
 
     # Key Metrics Row (showing current filtered dataset totals)
-    insights = data_processor.get_insights()
+    # Check if we have filtered data from Performance Analysis
+    filtered_data = st.session_state.get('performance_filtered_data', None)
+
+    if filtered_data is not None and not filtered_data.empty:
+        # Use filtered data for metrics calculation
+        filtered_sales = filtered_data[filtered_data['Tran Type'] == 'Sales']
+        filtered_returns = filtered_data[filtered_data['Tran Type'] == 'Return']
+
+        # Calculate metrics from filtered data
+        total_transactions = len(filtered_sales)
+        total_returns = len(filtered_returns)
+        net_items = total_transactions - total_returns
+
+        total_revenue = int(filtered_sales['Value'].sum()) if not filtered_sales.empty else 0
+        total_return_value = int(abs(filtered_returns['Value'].sum())) if not filtered_returns.empty else 0
+        net_revenue = total_revenue - total_return_value
+
+        unique_products = filtered_sales['Normalized_Category'].nunique() if not filtered_sales.empty else 0
+
+        actual_return_rate = (total_returns / total_transactions * 100) if total_transactions > 0 else 0
+
+        metrics_source = "Filtered Data (Performance Analysis)"
+    else:
+        # Use overall dataset metrics
+        insights = data_processor.get_insights()
+        total_transactions = insights.get('total_sales', 0)
+        total_returns = insights.get('total_returns', 0)
+        net_items = total_transactions - total_returns
+        net_revenue = insights.get('net_revenue', 0)
+        total_revenue = insights.get('total_revenue', 0)
+        unique_products = insights.get('unique_normalized_categories', insights.get('unique_products', 0))
+        actual_return_rate = (total_returns / total_transactions * 100) if total_transactions > 0 else 0
+        metrics_source = "Overall Dataset"
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         # Show current dataset metrics (filtered or full based on date selection)
         # Using number of transactions as "Total Net Items Sold"
-        total_transactions = insights.get('total_sales', 0)
-        total_returns = insights.get('total_returns', 0)
-        net_items = total_transactions - total_returns
         st.metric("Total Net Items Sold", f"{format_indian_number(net_items)}", f"Sales: {format_indian_number(total_transactions)}")
 
     with col2:
         # Show current dataset metrics (filtered or full based on date selection)
-        net_revenue = insights.get('net_revenue', 0)
-        total_revenue = insights.get('total_revenue', 0)
         st.metric("Total Net Revenue", f"₹{format_indian_number(net_revenue)}", f"Sales: ₹{format_indian_number(total_revenue)}")
 
     with col3:
         # Show current dataset unique products (filtered or full based on date selection)
-        unique_products = insights.get('unique_products', 0)
-        st.metric("Unique Products Sold", f"{unique_products}")
+        st.metric("Unique Categories Sold", f"{unique_products}")
 
     with col4:
         # Calculate return rate based on current dataset (filtered or full based on date selection)
-        current_total_sales = insights.get('total_sales', 0)
-        current_total_returns = insights.get('total_returns', 0)
-        actual_return_rate = (current_total_returns / current_total_sales * 100) if current_total_sales > 0 else 0
-        st.metric("Overall Return Rate", f"{actual_return_rate:.2f}% ({format_indian_number(current_total_returns)} returns)")
+        st.metric("Overall Return Rate", f"{actual_return_rate:.2f}% ({format_indian_number(total_returns)} returns)")
+
+    # Show data source indicator
+    if filtered_data is not None and not filtered_data.empty:
+        st.info(f"📊 Metrics calculated from: **{metrics_source}** | {format_indian_number(len(filtered_data))} transactions")
+    else:
+        total_dataset_size = len(data_processor.df) if data_processor.df is not None else 0
+        st.info(f"📊 Metrics calculated from: **{metrics_source}** | {format_indian_number(total_dataset_size)} transactions")
 
     # Main Dashboard Tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "🏆 Performance Analysis",
+        "🏆 Performance Analysis (Normalized)",
         "📊 Brand Analysis",
         "📈 Product Analysis",
         "💰 Price & Discount Analysis",
@@ -1433,7 +1654,7 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
 
 def create_performance_analysis(data_processor: DataProcessor):
     """Create performance analysis tab"""
-    st.markdown('<div class="section-header">🏆 Product Performance Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🏆 Product Performance Analysis (Normalized Categories)</div>', unsafe_allow_html=True)
 
     insights = data_processor.get_insights()
 
@@ -1470,19 +1691,18 @@ def create_performance_analysis(data_processor: DataProcessor):
     col_filter3, col_filter4 = st.columns([1, 1])
 
     with col_filter3:
-        # Product Category Selection (dependent on brand and product code)
-        # Note: Categories are now the actual product codes from your sheet
+        # Product Category Selection (using normalized categories)
         if selected_brand != "All Brands" and selected_product_code != "All Product Codes":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, product_code=selected_product_code)
-            available_categories = get_product_categories(filtered_data)
+            filtered_data = get_filtered_data_performance(data_processor.sales_df, selected_brand, product_code=selected_product_code)
+            available_categories = get_normalized_categories(filtered_data)
         elif selected_brand != "All Brands":
             brand_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
-            available_categories = get_product_categories(brand_data)
+            available_categories = get_normalized_categories(brand_data)
         else:
-            available_categories = get_product_categories(data_processor.sales_df)
+            available_categories = get_normalized_categories(data_processor.sales_df)
 
         selected_category = st.selectbox(
-            "Select Product Category:",
+            "Select Normalized Category:",
             options=["All Categories"] + list(available_categories.keys()),
             index=0,
             key="filter_category"
@@ -1511,11 +1731,11 @@ def create_performance_analysis(data_processor: DataProcessor):
     with col_filter5:
         # Color Selection (using normalized shade codes)
         if selected_brand != "All Brands" and selected_product_code != "All Product Codes" and selected_style_code != "All Style Codes":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, category=selected_category,
+            filtered_data = get_filtered_data_performance(data_processor.sales_df, selected_brand, category=selected_category,
                                             product_code=selected_product_code, style_code=selected_style_code)
             available_colors = sorted(filtered_data['Shade_Code_Normalized'].dropna().unique()) if 'Shade_Code_Normalized' in filtered_data.columns else []
         elif selected_brand != "All Brands" and selected_product_code != "All Product Codes":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, product_code=selected_product_code)
+            filtered_data = get_filtered_data_performance(data_processor.sales_df, selected_brand, product_code=selected_product_code)
             available_colors = sorted(filtered_data['Shade_Code_Normalized'].dropna().unique()) if 'Shade_Code_Normalized' in filtered_data.columns else []
         elif selected_brand != "All Brands":
             filtered_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
@@ -1533,15 +1753,15 @@ def create_performance_analysis(data_processor: DataProcessor):
     with col_filter6:
         # Size Selection
         if selected_brand != "All Brands" and selected_product_code != "All Product Codes" and selected_style_code != "All Style Codes" and selected_color != "All Colors":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, category=selected_category,
+            filtered_data = get_filtered_data_performance(data_processor.sales_df, selected_brand, category=selected_category,
                                             product_code=selected_product_code, style_code=selected_style_code, color=selected_color)
             available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
         elif selected_brand != "All Brands" and selected_product_code != "All Product Codes" and selected_style_code != "All Style Codes":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, category=selected_category,
+            filtered_data = get_filtered_data_performance(data_processor.sales_df, selected_brand, category=selected_category,
                                             product_code=selected_product_code, style_code=selected_style_code)
             available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
         elif selected_brand != "All Brands" and selected_product_code != "All Product Codes":
-            filtered_data = get_filtered_data(data_processor.sales_df, selected_brand, product_code=selected_product_code)
+            filtered_data = get_filtered_data_performance(data_processor.sales_df, selected_brand, product_code=selected_product_code)
             available_sizes = sorted(filtered_data['Size'].dropna().unique()) if 'Size' in filtered_data.columns else []
         elif selected_brand != "All Brands":
             filtered_data = data_processor.sales_df[data_processor.sales_df['Brand Code'] == selected_brand]
@@ -1556,9 +1776,32 @@ def create_performance_analysis(data_processor: DataProcessor):
             key="filter_size"
         )
 
-    # Apply all filters to get the final filtered dataframe
-    filtered_df = get_filtered_data(data_processor.sales_df, selected_brand, selected_category,
+    # Apply all filters to get the final filtered dataframe (including both sales and returns)
+    filtered_df = get_filtered_data_performance(data_processor.df, selected_brand, selected_category,
                                    selected_product_code, selected_style_code, selected_color, selected_size)
+
+    # Check if any filters are active (not set to "All")
+    filters_active = (
+        selected_brand != "All Brands" or
+        selected_category != "All Categories" or
+        selected_product_code != "All Product Codes" or
+        selected_style_code != "All Style Codes" or
+        selected_color != "All Colors" or
+        selected_size != "All Sizes"
+    )
+
+    # Store filtered data in session state for dashboard metrics only if filters are active
+    old_filtered_data = st.session_state.get('performance_filtered_data', None)
+    if filters_active and not filtered_df.empty:
+        st.session_state['performance_filtered_data'] = filtered_df
+        # Force rerun if filtered data changed
+        if old_filtered_data is None or len(old_filtered_data) != len(filtered_df):
+            st.rerun()
+    else:
+        # Clear session state when no filters are active
+        if 'performance_filtered_data' in st.session_state:
+            del st.session_state['performance_filtered_data']
+            st.rerun()  # Force rerun when clearing filters
 
     # Show filter summary
     filter_summary = []
@@ -1567,7 +1810,7 @@ def create_performance_analysis(data_processor: DataProcessor):
     if selected_product_code != "All Product Codes":
         filter_summary.append(f"Product Code: {selected_product_code}")
     if selected_category != "All Categories":
-        filter_summary.append(f"Product Category: {selected_category}")
+        filter_summary.append(f"Normalized Category: {selected_category}")
     if selected_style_code != "All Style Codes":
         filter_summary.append(f"Style Code: {selected_style_code}")
     if selected_color != "All Colors":
@@ -2180,14 +2423,13 @@ def create_performance_analysis(data_processor: DataProcessor):
                         else:
                             st.dataframe(display_size_color[['Display_Name', group_column_sc, 'Size', 'Shade_Code_Normalized', 'Total_Quantity']].head(10))
 
-    # Product Category Analysis (Now using actual product codes from your sheet)
-    st.markdown("**Product Category Analysis**")
+    # Product Category Analysis (Using Normalized Categories)
+    st.markdown("**Normalized Category Analysis**")
 
     if not filtered_df.empty:
-        # Analyze product categories based on actual product codes from your sheet
-        # Group by the actual product codes (which are now our categories)
+        # Analyze product categories based on normalized categories
         category_data = []
-        category_analysis = filtered_df.groupby('Product Code').agg({
+        category_analysis = filtered_df.groupby('Normalized_Category').agg({
             'Qty': 'sum',
             'Value': 'sum'
         }).reset_index()
@@ -2196,7 +2438,7 @@ def create_performance_analysis(data_processor: DataProcessor):
             total_qty = int(row['Qty'])
             total_value = row['Value']
             category_data.append({
-                'Category': row['Product Code'],
+                'Category': row['Normalized_Category'],
                 'Total_Quantity': total_qty,
                 'Total_Value': total_value,
                 'Average_Price': total_value / total_qty if total_qty > 0 else 0
@@ -2205,12 +2447,12 @@ def create_performance_analysis(data_processor: DataProcessor):
         if category_data:
             category_df = pd.DataFrame(category_data).sort_values('Total_Quantity', ascending=False)
 
-            # Create chart for product categories (showing actual product codes from your sheet)
+            # Create chart for normalized categories
             fig_categories = px.bar(
                 category_df.head(top_n),
                 x='Category',
                 y='Total_Quantity',
-                title=f"Product Codes by Quantity (Top {top_n}) - From Your Sheet",
+                title=f"Normalized Categories by Quantity (Top {top_n})",
                 color='Total_Quantity',
                 color_continuous_scale='viridis'
             )
@@ -2218,7 +2460,7 @@ def create_performance_analysis(data_processor: DataProcessor):
             st.plotly_chart(fig_categories, use_container_width=True)
 
             # Show category breakdown table
-            st.markdown("**Product Code Breakdown (All Categories from Your Sheet):**")
+            st.markdown("**Normalized Category Breakdown:**")
             display_df = category_df.copy()
             display_df['Total_Quantity'] = display_df['Total_Quantity'].apply(format_indian_number)
             display_df['Total_Value'] = display_df['Total_Value'].apply(lambda x: f"₹{format_indian_number(int(x))}")
@@ -2391,12 +2633,12 @@ def create_product_analysis(data_processor: DataProcessor):
         )
 
     with col_filter2:
-        # Category Selection (Normalized Product Categories)
+        # Category Selection (Normalized Categories)
         if selected_brand != "All Brands":
             brand_data = sales_df[sales_df['Brand Code'] == selected_brand]
-            available_categories = sorted(brand_data['Product_Category'].dropna().unique())
+            available_categories = sorted(brand_data['Normalized_Category'].dropna().unique())
         else:
-            available_categories = sorted(sales_df['Product_Category'].dropna().unique())
+            available_categories = sorted(sales_df['Normalized_Category'].dropna().unique())
 
         selected_category = st.selectbox(
             "Select Product Category:",
@@ -2411,7 +2653,7 @@ def create_product_analysis(data_processor: DataProcessor):
         # Color Selection
         if selected_brand != "All Brands" and selected_category != "All Categories":
             filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
-                                   (sales_df['Product_Category'] == selected_category)]
+                                   (sales_df['Product Code'] == selected_category)]
         elif selected_brand != "All Brands":
             filtered_data = sales_df[sales_df['Brand Code'] == selected_brand]
         else:
@@ -2429,11 +2671,11 @@ def create_product_analysis(data_processor: DataProcessor):
         # Size Selection
         if selected_brand != "All Brands" and selected_category != "All Categories" and selected_color != "All Colors":
             filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
-                                   (sales_df['Product_Category'] == selected_category) &
+                                   (sales_df['Product Code'] == selected_category) &
                                    (sales_df['Shade_Code_Normalized'] == selected_color)]
         elif selected_brand != "All Brands" and selected_category != "All Categories":
             filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
-                                   (sales_df['Product_Category'] == selected_category)]
+                                   (sales_df['Product Code'] == selected_category)]
         elif selected_brand != "All Brands":
             filtered_data = sales_df[sales_df['Brand Code'] == selected_brand]
         else:
@@ -2447,8 +2689,8 @@ def create_product_analysis(data_processor: DataProcessor):
             key="product_analysis_size"
         )
 
-    # Apply filters
-    filtered_df = get_filtered_data(sales_df, selected_brand, selected_category, color=selected_color, size=selected_size)
+    # Apply filters using normalized categories
+    filtered_df = get_filtered_data_normalized(sales_df, selected_brand, selected_category, color=selected_color, size=selected_size)
 
     # Show filter summary and data counts
     filter_summary = []
@@ -2466,16 +2708,22 @@ def create_product_analysis(data_processor: DataProcessor):
         st.info(f"🔍 Active filters: {', '.join(filter_summary)}")
     st.info(f"📈 Filtered data: {len(filtered_df):,} transactions")
 
+    # Show normalization info
+    if not filtered_df.empty:
+        unique_categories = filtered_df['Normalized_Category'].nunique()
+        original_codes = filtered_df['Product Code'].nunique()
+        st.info(f"🔄 Product normalization: {original_codes} raw codes → {unique_categories} categories")
+
     # Calculate insights based on filtered data
     if not filtered_df.empty:
-        # Group sales by normalized product category for top products
-        product_performance = filtered_df.groupby(['Brand Code', 'Product_Category']).agg({
+        # Group sales by normalized category for top products (no more raw product codes)
+        product_performance = filtered_df.groupby(['Brand Code', 'Normalized_Category']).agg({
             'Qty': 'sum',
             'Value': 'sum'
         }).reset_index()
 
-        top_products_qty = product_performance.nlargest(50, 'Qty')[['Brand Code', 'Product_Category', 'Qty']].to_dict('records')
-        top_products_value = product_performance.nlargest(50, 'Value')[['Brand Code', 'Product_Category', 'Value']].to_dict('records')
+        top_products_qty = product_performance.nlargest(50, 'Qty')[['Brand Code', 'Normalized_Category', 'Qty']].to_dict('records')
+        top_products_value = product_performance.nlargest(50, 'Value')[['Brand Code', 'Normalized_Category', 'Value']].to_dict('records')
     else:
         top_products_qty = []
         top_products_value = []
@@ -2483,11 +2731,11 @@ def create_product_analysis(data_processor: DataProcessor):
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🥇 Top Products by Quantity")
+        st.subheader("🥇 Top Categories by Quantity")
 
         # Configurable top N selector
         top_n_qty = st.selectbox(
-            "Select number of products to display:",
+            "Select number of categories to display:",
             options=[5, 10, 15, 20, 25, 50],
             index=1,  # 10 is at index 1
             key="top_products_qty_n"
@@ -2495,20 +2743,20 @@ def create_product_analysis(data_processor: DataProcessor):
 
         if top_products_qty:
             products_df = pd.DataFrame(top_products_qty)
-            products_df['Brand_Category'] = products_df['Brand Code'] + ' - ' + products_df['Product_Category']
+            products_df['Brand_Category'] = products_df['Brand Code'] + ' - ' + products_df['Normalized_Category']
             top_products_qty_display = products_df.head(top_n_qty)
-            fig = px.bar(top_products_qty_display, x='Qty', y='Brand_Category', orientation='h', title=f"Top {top_n_qty} Product Categories by Quantity")
+            fig = px.bar(top_products_qty_display, x='Qty', y='Brand_Category', orientation='h', title=f"Top {top_n_qty} Categories by Quantity")
             fig.update_layout(height=max(400, top_n_qty * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No product data available for quantity analysis. Please check your filters or data source.")
 
     with col2:
-        st.subheader("💎 Top Products by Revenue")
+        st.subheader("💎 Top Categories by Revenue")
 
         # Configurable top N selector
         top_n_value = st.selectbox(
-            "Select number of products to display:",
+            "Select number of categories to display:",
             options=[5, 10, 15, 20, 25, 50],
             index=1,  # 10 is at index 1
             key="top_products_value_n"
@@ -2516,9 +2764,9 @@ def create_product_analysis(data_processor: DataProcessor):
 
         if top_products_value:
             products_value_df = pd.DataFrame(top_products_value)
-            products_value_df['Brand_Category'] = products_value_df['Brand Code'] + ' - ' + products_value_df['Product_Category']
+            products_value_df['Brand_Category'] = products_value_df['Brand Code'] + ' - ' + products_value_df['Normalized_Category']
             top_products_value_display = products_value_df.head(top_n_value)
-            fig = px.bar(top_products_value_display, x='Value', y='Brand_Category', orientation='h', title=f"Top {top_n_value} Product Categories by Revenue")
+            fig = px.bar(top_products_value_display, x='Value', y='Brand_Category', orientation='h', title=f"Top {top_n_value} Categories by Revenue")
             fig.update_layout(height=max(400, top_n_value * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -3133,17 +3381,15 @@ def create_data_overview(data_processor: DataProcessor):
     st.subheader("🔍 Sample Data")
     if data_processor.sales_df is not None and not data_processor.sales_df.empty:
         # Show sample of filtered data
-        sample_data = data_processor.sales_df.head(10)[['Bill Date', 'Brand Code', 'Product_Category', 'Qty', 'Value', 'Tran Type']]
+        sample_data = data_processor.sales_df.head(10)
         if data_processor.returns_df is not None and not data_processor.returns_df.empty:
-            returns_sample = data_processor.returns_df.head(5)[['Bill Date', 'Brand Code', 'Product_Category', 'Qty', 'Value', 'Tran Type']]
+            returns_sample = data_processor.returns_df.head(5)
             sample_data = pd.concat([sample_data, returns_sample])
         st.dataframe(sample_data)
-        st.caption("Showing sample of filtered data based on selected date range (Product Categories are normalized)")
+        st.caption("Showing sample of filtered data based on selected date range")
     else:
         # Show sample of full data
-        display_df = data_processor.df.head(20)[['Bill Date', 'Brand Code', 'Product_Category', 'Qty', 'Value', 'Tran Type']]
-        st.dataframe(display_df)
-        st.caption("Showing sample of full data (Product Categories are normalized)")
+        st.dataframe(data_processor.df.head(20))
 
     # Download options
     st.subheader("💾 Export Data")
