@@ -207,6 +207,147 @@ def get_style_codes_for_brand_product(df, brand, product_code):
     filtered_data = df[(df['Brand Code'] == brand) & (df['Product Code'] == product_code)]
     return sorted(filtered_data['Style Code'].dropna().unique())
 
+
+def normalize_product_category(product_code):
+    """
+    Normalize product codes into standardized categories.
+    Groups similar products together to reduce complexity.
+    """
+    if not product_code or pd.isna(product_code):
+        return 'OTHER'
+
+    # Convert to uppercase for case-insensitive matching
+    code = str(product_code).upper().strip()
+
+    # Product category mapping
+    category_mapping = {
+        # T-Shirts (including sweatshirts, knit shirts)
+        'T-SHIRT': 'T-SHIRT',
+        'T-SHIRTS': 'T-SHIRT',
+        'T-SHIRT-3PCK': 'T-SHIRT',
+        'SWEAT SHIRT': 'T-SHIRT',
+        'SWEATSHIRT': 'T-SHIRT',
+        'KNIT SHIRT': 'T-SHIRT',
+
+        # Shirts (formal/formal-casual shirts)
+        'SHIRT': 'SHIRT',
+        'SHIRTS': 'SHIRT',
+        'POLO SHIRT': 'SHIRT',
+        'POLO': 'SHIRT',
+
+        # Bags (all types of bags)
+        'BAG': 'BAGS',
+        'BAGS': 'BAGS',
+        'PROMO BAG': 'BAGS',
+        'BACKPACK': 'BAGS',
+        'DUFFLE BAG': 'BAGS',
+        'TRAVEL BAG': 'BAGS',
+        'TROLLEY BAG': 'BAGS',
+
+        # Trousers/Pants (all types of pants/trousers)
+        'TROUSER': 'TROUSERS',
+        'PANT': 'TROUSERS',
+        'PANTS': 'TROUSERS',
+        'CARGO': 'TROUSERS',
+        'CARGO PANT': 'TROUSERS',
+        'CARGOS': 'TROUSERS',
+        'CHINO': 'TROUSERS',
+        'DENIM PANT': 'TROUSERS',
+        'FGTROUSER': 'TROUSERS',
+
+        # Jeans
+        'JEANS': 'JEANS',
+
+        # Shorts
+        'SHORTS': 'SHORTS',
+        'SHORTS BERMUDA': 'SHORTS',
+        'JOGGER': 'SHORTS',
+
+        # Jackets/Outerwear
+        'JACKET': 'JACKETS',
+        'SHACKET': 'JACKETS',
+        'OUTERWEAR': 'JACKETS',
+        'HOODY': 'JACKETS',
+
+        # Sweaters/Sweatshirts
+        'SWEATER': 'SWEATERS',
+        'SWEATERS': 'SWEATERS',
+        'SWEATS': 'SWEATERS',
+
+        # Underwear
+        'BOXER': 'UNDERWEAR',
+        'BRIEF': 'UNDERWEAR',
+        'BRIEF-2PCK': 'UNDERWEAR',
+        'BRIEF-3PCK': 'UNDERWEAR',
+        'VEST': 'UNDERWEAR',
+        'VEST-2PCK': 'UNDERWEAR',
+        'LOWER': 'UNDERWEAR',
+
+        # Accessories
+        'BELT': 'ACCESSORIES',
+        'CAP': 'ACCESSORIES',
+        'CAPS': 'ACCESSORIES',
+        'SOCKS-3PCK': 'ACCESSORIES',
+        'ACCESSORY': 'ACCESSORIES',
+
+        # Bottoms (general bottoms category)
+        'BOTTOM': 'BOTTOMS',
+        'DENIM': 'BOTTOMS',
+        'NON DENIM': 'BOTTOMS',
+        'KNIT DENIM': 'BOTTOMS',
+
+        # Speakers/Audio
+        'SPEAKER': 'SPEAKERS',
+        'SPEAKERS': 'SPEAKERS',
+
+        # Deodorants
+        'DEO': 'DEO',
+
+        # Tailoring
+        'TAILORING': 'TAILORING',
+
+        # Special categories
+        'PI': 'PI',
+        'TOP': 'TOP',
+        'TRIPACK': 'TRIPACK',
+        'FLATKNITS': 'FLATKNITS',
+        'UASPKRAS002': 'OTHER'  # Generic/other codes
+    }
+
+    # Direct mapping
+    if code in category_mapping:
+        return category_mapping[code]
+
+    # Keyword-based mapping for codes not in direct mapping
+    # This handles variations we might have missed
+    if 'T-SHIRT' in code or 'TSHIRT' in code:
+        return 'T-SHIRT'
+    elif 'SHIRT' in code and 'T-SHIRT' not in code:
+        return 'SHIRT'
+    elif any(word in code for word in ['BAG', 'BACKPACK', 'DUFFLE', 'TRAVEL', 'TROLLEY']):
+        return 'BAGS'
+    elif any(word in code for word in ['TROUSER', 'PANT', 'CARGO', 'CHINO']):
+        return 'TROUSERS'
+    elif 'JEAN' in code:
+        return 'JEANS'
+    elif 'SHORT' in code:
+        return 'SHORTS'
+    elif any(word in code for word in ['JACKET', 'SHACKET', 'OUTER']):
+        return 'JACKETS'
+    elif any(word in code for word in ['SWEATER', 'SWEAT']):
+        return 'SWEATERS'
+    elif any(word in code for word in ['BOXER', 'BRIEF', 'VEST']):
+        return 'UNDERWEAR'
+    elif any(word in code for word in ['BELT', 'CAP', 'SOCK']):
+        return 'ACCESSORIES'
+    elif any(word in code for word in ['BOTTOM', 'DENIM']):
+        return 'BOTTOMS'
+    elif 'SPEAKER' in code:
+        return 'SPEAKERS'
+
+    # If no mapping found, return the original code (but try to clean it)
+    return code
+
 def normalize_shade_codes(df):
     """Normalize shade codes to handle wide ranges (200s vs 900s)"""
     if df is None or df.empty or 'Shade Code' not in df.columns:
@@ -251,11 +392,10 @@ def get_filtered_data(df, brand=None, category=None, product_code=None, style_co
     if brand and brand != "All Brands":
         filtered_df = filtered_df[filtered_df['Brand Code'] == brand]
 
-    # Category filter - now uses exact product code matching since categories are product codes
+    # Category filter - now uses normalized product categories
     if category and category != "All Categories":
-        # Since categories are now the actual product codes from the sheet,
-        # we do exact matching instead of keyword matching
-        mask = filtered_df['Product Code'] == category
+        # Use the normalized product categories for filtering
+        mask = filtered_df['Product_Category'] == category
         filtered_df = filtered_df[mask]
 
     # Product Code filter
@@ -524,6 +664,9 @@ class DataProcessor:
         """Add computed columns for analysis"""
         # Brand-Product combination
         self.df['Brand_Product'] = self.df['Brand Code'] + ' - ' + self.df['Product Code']
+
+        # Normalized product category (groups similar products together)
+        self.df['Product_Category'] = self.df['Product Code'].apply(normalize_product_category)
 
         # Profit calculation (MRP - Cost)
         self.df['Profit'] = self.df['MRP'] - self.df['Cost']
@@ -2248,12 +2391,12 @@ def create_product_analysis(data_processor: DataProcessor):
         )
 
     with col_filter2:
-        # Category Selection (Product Codes)
+        # Category Selection (Normalized Product Categories)
         if selected_brand != "All Brands":
             brand_data = sales_df[sales_df['Brand Code'] == selected_brand]
-            available_categories = sorted(brand_data['Product Code'].dropna().unique())
+            available_categories = sorted(brand_data['Product_Category'].dropna().unique())
         else:
-            available_categories = sorted(sales_df['Product Code'].dropna().unique())
+            available_categories = sorted(sales_df['Product_Category'].dropna().unique())
 
         selected_category = st.selectbox(
             "Select Product Category:",
@@ -2268,7 +2411,7 @@ def create_product_analysis(data_processor: DataProcessor):
         # Color Selection
         if selected_brand != "All Brands" and selected_category != "All Categories":
             filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
-                                   (sales_df['Product Code'] == selected_category)]
+                                   (sales_df['Product_Category'] == selected_category)]
         elif selected_brand != "All Brands":
             filtered_data = sales_df[sales_df['Brand Code'] == selected_brand]
         else:
@@ -2286,11 +2429,11 @@ def create_product_analysis(data_processor: DataProcessor):
         # Size Selection
         if selected_brand != "All Brands" and selected_category != "All Categories" and selected_color != "All Colors":
             filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
-                                   (sales_df['Product Code'] == selected_category) &
+                                   (sales_df['Product_Category'] == selected_category) &
                                    (sales_df['Shade_Code_Normalized'] == selected_color)]
         elif selected_brand != "All Brands" and selected_category != "All Categories":
             filtered_data = sales_df[(sales_df['Brand Code'] == selected_brand) &
-                                   (sales_df['Product Code'] == selected_category)]
+                                   (sales_df['Product_Category'] == selected_category)]
         elif selected_brand != "All Brands":
             filtered_data = sales_df[sales_df['Brand Code'] == selected_brand]
         else:
@@ -2325,14 +2468,14 @@ def create_product_analysis(data_processor: DataProcessor):
 
     # Calculate insights based on filtered data
     if not filtered_df.empty:
-        # Group sales by product for top products
-        product_performance = filtered_df.groupby(['Brand Code', 'Product Code']).agg({
+        # Group sales by normalized product category for top products
+        product_performance = filtered_df.groupby(['Brand Code', 'Product_Category']).agg({
             'Qty': 'sum',
             'Value': 'sum'
         }).reset_index()
 
-        top_products_qty = product_performance.nlargest(50, 'Qty')[['Brand Code', 'Product Code', 'Qty']].to_dict('records')
-        top_products_value = product_performance.nlargest(50, 'Value')[['Brand Code', 'Product Code', 'Value']].to_dict('records')
+        top_products_qty = product_performance.nlargest(50, 'Qty')[['Brand Code', 'Product_Category', 'Qty']].to_dict('records')
+        top_products_value = product_performance.nlargest(50, 'Value')[['Brand Code', 'Product_Category', 'Value']].to_dict('records')
     else:
         top_products_qty = []
         top_products_value = []
@@ -2352,9 +2495,9 @@ def create_product_analysis(data_processor: DataProcessor):
 
         if top_products_qty:
             products_df = pd.DataFrame(top_products_qty)
-            products_df['Brand_Product'] = products_df['Brand Code'] + ' - ' + products_df['Product Code']
+            products_df['Brand_Category'] = products_df['Brand Code'] + ' - ' + products_df['Product_Category']
             top_products_qty_display = products_df.head(top_n_qty)
-            fig = px.bar(top_products_qty_display, x='Qty', y='Brand_Product', orientation='h', title=f"Top {top_n_qty} Products by Quantity")
+            fig = px.bar(top_products_qty_display, x='Qty', y='Brand_Category', orientation='h', title=f"Top {top_n_qty} Product Categories by Quantity")
             fig.update_layout(height=max(400, top_n_qty * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -2373,9 +2516,9 @@ def create_product_analysis(data_processor: DataProcessor):
 
         if top_products_value:
             products_value_df = pd.DataFrame(top_products_value)
-            products_value_df['Brand_Product'] = products_value_df['Brand Code'] + ' - ' + products_value_df['Product Code']
+            products_value_df['Brand_Category'] = products_value_df['Brand Code'] + ' - ' + products_value_df['Product_Category']
             top_products_value_display = products_value_df.head(top_n_value)
-            fig = px.bar(top_products_value_display, x='Value', y='Brand_Product', orientation='h', title=f"Top {top_n_value} Products by Revenue")
+            fig = px.bar(top_products_value_display, x='Value', y='Brand_Category', orientation='h', title=f"Top {top_n_value} Product Categories by Revenue")
             fig.update_layout(height=max(400, top_n_value * 15), yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -2990,15 +3133,17 @@ def create_data_overview(data_processor: DataProcessor):
     st.subheader("🔍 Sample Data")
     if data_processor.sales_df is not None and not data_processor.sales_df.empty:
         # Show sample of filtered data
-        sample_data = data_processor.sales_df.head(10)
+        sample_data = data_processor.sales_df.head(10)[['Bill Date', 'Brand Code', 'Product_Category', 'Qty', 'Value', 'Tran Type']]
         if data_processor.returns_df is not None and not data_processor.returns_df.empty:
-            returns_sample = data_processor.returns_df.head(5)
+            returns_sample = data_processor.returns_df.head(5)[['Bill Date', 'Brand Code', 'Product_Category', 'Qty', 'Value', 'Tran Type']]
             sample_data = pd.concat([sample_data, returns_sample])
         st.dataframe(sample_data)
-        st.caption("Showing sample of filtered data based on selected date range")
+        st.caption("Showing sample of filtered data based on selected date range (Product Categories are normalized)")
     else:
         # Show sample of full data
-        st.dataframe(data_processor.df.head(20))
+        display_df = data_processor.df.head(20)[['Bill Date', 'Brand Code', 'Product_Category', 'Qty', 'Value', 'Tran Type']]
+        st.dataframe(display_df)
+        st.caption("Showing sample of full data (Product Categories are normalized)")
 
     # Download options
     st.subheader("💾 Export Data")
