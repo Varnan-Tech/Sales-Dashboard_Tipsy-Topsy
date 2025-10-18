@@ -3325,6 +3325,13 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
 
                     response = result.get('answer_text', 'No answer generated')
 
+                    # Show debug info in an expander
+                    with st.expander("🔧 Debug Info"):
+                        st.write(f"**Query:** {user_query}")
+                        st.write(f"**Dataset:** {selected_dataset}")
+                        st.write(f"**Response:** {response[:200]}...")
+                        st.write(f"**Latency:** {result.get('latency_s', 'N/A'):.2f}s")
+
                     # Store in session state for persistence
                     chat_key = f'chat_messages_{selected_dataset}'
                     if chat_key not in st.session_state:
