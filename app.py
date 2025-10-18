@@ -1422,6 +1422,11 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                 dataset_id = uploaded_file.name.replace('.', '_').replace(' ', '_')
                 already_indexed = f'rag_dataset_info_{dataset_id}' in st.session_state
 
+                # Debug info
+                st.write(f"📁 File: {uploaded_file.name} → Dataset ID: {dataset_id}")
+                st.write(f"📊 Data shape: {data_processor.df.shape} rows × {data_processor.df.shape[1]} columns")
+                st.write(f"🔍 Already indexed: {already_indexed}")
+
                 # Status info
                 if should_enable_rag:
                     if already_indexed:
@@ -1438,6 +1443,11 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                             from app.rag.vector_store import get_vector_store
                             from app.rag.indexer import iter_documents
                             from app.rag.query_engine import answer_query
+
+                            # Debug: Show sample data being indexed
+                            st.write("📝 Sample data to be indexed:")
+                            sample_data = data_processor.df.head(3)[['Bill Date', 'Tran Type', 'Brand Code ', 'Value', 'Qty']].to_string()
+                            st.code(sample_data, language="text")
 
                             # Initialize RAG components
                             embedder = Embeddings()
@@ -3320,6 +3330,19 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
                     embedder = st.session_state[f'rag_embedder_{selected_dataset}']
                     vector_store = st.session_state[f'rag_vector_store_{selected_dataset}']
 
+                    # Debug: Check what we're actually querying
+                    st.info(f"🔍 Querying dataset: **{selected_dataset}**")
+
+                    # Check if vector store and embedder exist
+                    embedder_exists = f'rag_embedder_{selected_dataset}' in st.session_state
+                    vector_store_exists = f'rag_vector_store_{selected_dataset}' in st.session_state
+
+                    st.write(f"Embedder exists: {embedder_exists}, Vector store exists: {vector_store_exists}")
+
+                    if not embedder_exists or not vector_store_exists:
+                        st.error("❌ RAG components not found in session state!")
+                        st.stop()
+
                     # Perform RAG query
                     result = answer_query(vector_store, embedder, selected_dataset, user_query)
 
@@ -3331,6 +3354,14 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
                         st.write(f"**Dataset:** {selected_dataset}")
                         st.write(f"**Response:** {response[:200]}...")
                         st.write(f"**Latency:** {result.get('latency_s', 'N/A'):.2f}s")
+
+                        # Show dataset info
+                        dataset_info_key = f'rag_dataset_info_{selected_dataset}'
+                        if dataset_info_key in st.session_state:
+                            info = st.session_state[dataset_info_key]
+                            st.write(f"**Indexed Data:** {info['rows']:,} rows, {info['total_docs']:,} documents")
+                        else:
+                            st.write("**Indexed Data:** Not found in session state!")
 
                     # Store in session state for persistence
                     chat_key = f'chat_messages_{selected_dataset}'
