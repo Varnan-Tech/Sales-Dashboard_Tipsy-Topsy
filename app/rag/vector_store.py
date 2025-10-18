@@ -33,10 +33,10 @@ class VectorStore:
 
 class ChromaStore(VectorStore):
 	def __init__(self) -> None:
-		from chromadb import Client
-		from chromadb.config import Settings
+		import chromadb
 
-		self._client = Client(Settings(chroma_db_impl="duckdb+parquet", persist_directory=CHROMA_PERSIST_DIR))
+		# Use new Chroma client API
+		self._client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 		self._collections: Dict[str, object] = {}
 
 	def create_collection(self, dataset_id: str) -> None:

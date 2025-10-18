@@ -1652,6 +1652,15 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
     with tab8:
         create_data_overview(data_processor)
 
+    # Optional: Mount RAG UI when feature flag is enabled (non-breaking)
+    try:
+        import os as _os
+        if _os.getenv("ENABLE_RAG", "false").lower() == "true":
+            from app.rag.streamlit_integration import mount_rag_ui as _mount_rag_ui
+            _mount_rag_ui(st)
+    except Exception:
+        pass
+
 def create_performance_analysis(data_processor: DataProcessor):
     """Create performance analysis tab"""
     st.markdown('<div class="section-header">🏆 Product Performance Analysis (Normalized Categories)</div>', unsafe_allow_html=True)
