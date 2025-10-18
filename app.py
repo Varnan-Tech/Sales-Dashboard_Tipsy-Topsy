@@ -397,6 +397,8 @@ class DataProcessor:
                                 keep_default_na=False,  # Don't convert empty cells to NaN
                                 na_filter=False  # Don't filter NaN values
                             )
+                            # Strip trailing spaces from column names to standardize
+                            self.df.columns = self.df.columns.str.strip()
                             st.info(f"✅ Successfully loaded {len(self.df):,} rows from Excel file")
                         except Exception as e:
                             st.warning(f"⚠️ Primary Excel reading failed ({str(e)}), trying alternative method...")
@@ -406,6 +408,8 @@ class DataProcessor:
                                 st.warning(f"⚠️ Excel file contains multiple sheets: {xl.sheet_names}")
                                 st.info("💡 Using the first sheet. If you need a different sheet, please save it as a separate file.")
                             self.df = pd.read_excel(uploaded_file, engine='openpyxl', sheet_name=0)
+                            # Strip trailing spaces from column names to standardize
+                            self.df.columns = self.df.columns.str.strip()
                     else:  # xlsb
                         # For XLSB files
                         try:
@@ -416,6 +420,8 @@ class DataProcessor:
                                 keep_default_na=False,
                                 na_filter=False
                             )
+                            # Strip trailing spaces from column names to standardize
+                            self.df.columns = self.df.columns.str.strip()
                             st.info(f"✅ Successfully loaded {len(self.df):,} rows from Excel binary file")
                         except Exception as e:
                             st.warning(f"⚠️ Primary XLSB reading failed ({str(e)}), trying alternative method...")
@@ -424,6 +430,8 @@ class DataProcessor:
                                 st.warning(f"⚠️ Excel file contains multiple sheets: {xl.sheet_names}")
                                 st.info("💡 Using the first sheet. If you need a different sheet, please save it as a separate file.")
                             self.df = pd.read_excel(uploaded_file, engine='pyxlsb', sheet_name=0)
+                            # Strip trailing spaces from column names to standardize
+                            self.df.columns = self.df.columns.str.strip()
                 except ImportError:
                     st.error("❌ Missing required packages for Excel files. Please install: pip install openpyxl pyxlsb")
                     return False
@@ -1446,7 +1454,7 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
 
                             # Debug: Show sample data being indexed
                             st.write("📝 Sample data to be indexed:")
-                            sample_data = data_processor.df.head(3)[['Bill Date', 'Tran Type', 'Brand Code ', 'Value', 'Qty']].to_string()
+                            sample_data = data_processor.df.head(3)[['Bill Date', 'Tran Type', 'Brand Code', 'Value', 'Qty']].to_string()
                             st.code(sample_data, language="text")
 
                             # Initialize RAG components
