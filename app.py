@@ -1397,6 +1397,57 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
         if uploaded_file is not None:
             if data_processor.load_and_process_data(uploaded_file):
 
+                # Auto-index data for RAG when loaded
+                if RAG_AVAILABLE and os.getenv("ENABLE_RAG", "false").lower() == "true":
+                    with st.spinner("🤖 Auto-indexing data for AI analysis..."):
+                        try:
+                            # Import RAG components
+                            from app.rag.embeddings import Embeddings
+                            from app.rag.vector_store import get_vector_store
+                            from app.rag.indexer import iter_documents
+                            from app.rag.query_engine import answer_query
+
+                            # Initialize RAG components
+                            embedder = Embeddings()
+                            vector_store = get_vector_store()
+
+                            # Use uploaded file name as dataset ID
+                            dataset_id = uploaded_file.name.replace('.', '_').replace(' ', '_')
+
+                            # Index the data
+                            vector_store.create_collection(dataset_id)
+
+                            total_docs = 0
+                            start_time = time.time()
+
+                            for doc_id, doc_text, doc_metadata in iter_documents(dataset_id, data_processor.df, uploaded_file.name):
+                                # Create embedding
+                                doc_vector = embedder.embed_batch([doc_text])[0]
+
+                                # Store in vector database
+                                vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata])
+
+                                total_docs += 1
+
+                            elapsed = time.time() - start_time
+
+                            # Store RAG components in session state
+                            st.session_state[f'rag_embedder_{dataset_id}'] = embedder
+                            st.session_state[f'rag_vector_store_{dataset_id}'] = vector_store
+                            st.session_state[f'rag_dataset_info_{dataset_id}'] = {
+                                'name': uploaded_file.name,
+                                'rows': len(data_processor.df),
+                                'columns': data_processor.df.shape[1],
+                                'indexed_at': time.time(),
+                                'total_docs': total_docs
+                            }
+
+                            st.success(f"✅ Auto-indexed {total_docs} documents for AI in {elapsed:.1f}s")
+
+                        except Exception as e:
+                            st.warning(f"⚠️ RAG auto-indexing failed: {e}")
+                            st.info("💡 You can still use the dashboard normally. AI features may be limited.")
+
                 # Get valid date range for defaults (after data is loaded and parsed)
                 valid_dates = data_processor.df['Bill Date'].dropna() if hasattr(data_processor, 'df') and data_processor.df is not None else pd.Series()
                 if not valid_dates.empty:
@@ -3085,122 +3136,54 @@ def create_returns_analysis(data_processor: DataProcessor):
             st.plotly_chart(fig_rate, use_container_width=True)
 
 def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
-    """Create AI insights tab with full RAG pipeline"""
-    st.markdown('<div class="section-header">🤖 AI-Powered Insights (RAG System)</div>', unsafe_allow_html=True)
+    """Create AI insights tab with auto-indexed RAG system"""
+    st.markdown('<div class="section-header">🤖 AI-Powered Insights (Auto-RAG)</div>', unsafe_allow_html=True)
 
     if not RAG_AVAILABLE:
         st.warning("AI features require additional packages. Please install requirements.txt")
         return
 
-    # Data Upload and Indexing Section
-    st.subheader("📤 Upload Data for AI Analysis")
-
-    # File uploader for RAG indexing
-    uploaded_rag_file = st.file_uploader(
-        "Upload CSV/Excel file for AI analysis",
-        type=["csv", "xlsx", "xlsb"],
-        key="rag_file_uploader",
-        help="This file will be indexed for semantic search and AI queries"
-    )
-
-    # Dataset ID input
-    dataset_id = st.text_input(
-        "Dataset ID",
-        value="sales_data",
-        key="rag_dataset_id",
-        help="Unique identifier for this dataset"
-    )
-
-    # Index Data Button
-    if uploaded_rag_file is not None and st.button("🔄 Index Data for AI", type="primary"):
-        with st.spinner("🔄 Indexing data into vector store... This may take a moment."):
-            try:
-                # Import RAG components
-                from app.rag.embeddings import Embeddings
-                from app.rag.vector_store import get_vector_store
-                from app.rag.indexer import iter_documents, IngestResult
-                from app.rag.query_engine import answer_query
-
-                # Load the uploaded file
-                file_extension = uploaded_rag_file.name.split('.')[-1].lower()
-
-                if file_extension == 'csv':
-                    df = pd.read_csv(uploaded_rag_file)
-                elif file_extension in ['xlsx', 'xlsb']:
-                    df = pd.read_excel(uploaded_rag_file, engine='openpyxl' if file_extension == 'xlsx' else 'pyxlsb')
-                else:
-                    st.error("❌ Unsupported file format")
-                    st.stop()
-
-                st.success(f"✅ Loaded {len(df):,} rows, {df.shape[1]} columns")
-
-                # Initialize RAG components
-                embedder = Embeddings()
-                vector_store = get_vector_store()
-
-                # Index the data
-                st.info("🔄 Converting data to embeddings and indexing...")
-
-                # Create collection
-                vector_store.create_collection(dataset_id)
-
-                # Process documents in batches
-                total_docs = 0
-                start_time = time.time()
-
-                for doc_id, doc_text, doc_metadata in iter_documents(dataset_id, df, uploaded_rag_file.name):
-                    # Create embedding
-                    doc_vector = embedder.embed_batch([doc_text])[0]
-
-                    # Store in vector database
-                    vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata])
-
-                    total_docs += 1
-
-                    # Progress indicator
-                    if total_docs % 50 == 0:
-                        st.info(f"📊 Indexed {total_docs} documents...")
-
-                elapsed = time.time() - start_time
-
-                # Store RAG components in session state
-                st.session_state[f'rag_embedder_{dataset_id}'] = embedder
-                st.session_state[f'rag_vector_store_{dataset_id}'] = vector_store
-                st.session_state[f'rag_dataset_{dataset_id}'] = df
-
-                st.success(f"🎉 Successfully indexed {total_docs} documents in {elapsed:.1f} seconds!")
-                st.info("💡 Your data is now searchable by AI. Ask questions below!")
-
-            except Exception as e:
-                st.error(f"❌ Indexing failed: {str(e)}")
-                st.exception(e)
-
-    # Show indexed datasets
-    st.subheader("📊 Indexed Datasets")
-
+    # Check if data is loaded and indexed
     indexed_datasets = []
     for key in st.session_state.keys():
-        if key.startswith('rag_dataset_'):
-            dataset_name = key.replace('rag_dataset_', '')
-            df = st.session_state[key]
+        if key.startswith('rag_dataset_info_'):
+            dataset_id = key.replace('rag_dataset_info_', '')
+            info = st.session_state[key]
             indexed_datasets.append({
-                'name': dataset_name,
-                'rows': len(df),
-                'columns': df.shape[1]
+                'id': dataset_id,
+                'info': info
             })
 
-    if indexed_datasets:
-        for dataset in indexed_datasets:
-            with st.expander(f"📄 {dataset['name']} - {dataset['rows']:,} rows, {dataset['columns']} columns"):
-                st.dataframe(st.session_state[f'rag_dataset_{dataset["name"]}'].head(5))
-    else:
-        st.info("📤 No datasets indexed yet. Upload and index a file above.")
+    if not indexed_datasets:
+        st.info("📤 **No data indexed yet.** Upload a CSV/Excel file in the sidebar to automatically index it for AI analysis.")
+        st.markdown("""
+        ### How it works:
+        1. 📁 **Upload your data** in the left sidebar
+        2. 🤖 **Auto-indexing** happens automatically
+        3. 💬 **Ask questions** about your data here
+        4. 🎯 **Get AI-powered answers** based on your actual data
+        """)
+        return
 
-    # Chat interface with real RAG
-    st.subheader("💬 Ask Questions About Your Indexed Data")
+    # Show indexed datasets
+    st.subheader("📊 Available Datasets")
+
+    for dataset in indexed_datasets:
+        info = dataset['info']
+        with st.expander(f"📄 {info['name']} - {info['rows']:,} rows, {info['columns']} columns"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Documents", f"{info['total_docs']:,}")
+            with col2:
+                st.metric("Indexed At", time.strftime('%H:%M:%S', time.localtime(info['indexed_at'])))
+            with col3:
+                st.metric("Status", "✅ Ready")
+
+    # Chat interface with auto-indexed data
+    st.subheader("💬 Ask Questions About Your Data")
 
     # Dataset selector for queries
-    available_datasets = [key.replace('rag_dataset_', '') for key in st.session_state.keys() if key.startswith('rag_dataset_')]
+    available_datasets = [dataset['id'] for dataset in indexed_datasets]
     selected_dataset = st.selectbox(
         "Select dataset to query:",
         options=["Select a dataset..."] + available_datasets,
@@ -3208,15 +3191,27 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
     )
 
     if selected_dataset != "Select a dataset...":
+        # Get dataset info
+        dataset_info = None
+        for dataset in indexed_datasets:
+            if dataset['id'] == selected_dataset:
+                dataset_info = dataset['info']
+                break
+
+        st.info(f"🎯 Querying: **{dataset_info['name']}** ({dataset_info['total_docs']:,} indexed documents)")
+
         # Chat messages container
         chat_container = st.container()
 
         # Chat input
-        user_query = st.chat_input(f"Ask me anything about the {selected_dataset} dataset...")
+        user_query = st.chat_input(f"Ask me anything about {dataset_info['name']}...")
 
         if user_query:
-            with st.spinner("🔍 Searching your data..."):
+            with st.spinner("🔍 Searching your data with AI..."):
                 try:
+                    # Import answer_query function
+                    from app.rag.query_engine import answer_query
+
                     # Get RAG components from session state
                     embedder = st.session_state[f'rag_embedder_{selected_dataset}']
                     vector_store = st.session_state[f'rag_vector_store_{selected_dataset}']
@@ -3227,10 +3222,11 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
                     response = result.get('answer_text', 'No answer generated')
 
                     # Store in session state for persistence
-                    if f'chat_messages_{selected_dataset}' not in st.session_state:
-                        st.session_state[f'chat_messages_{selected_dataset}'] = []
+                    chat_key = f'chat_messages_{selected_dataset}'
+                    if chat_key not in st.session_state:
+                        st.session_state[chat_key] = []
 
-                    st.session_state[f'chat_messages_{selected_dataset}'].append({
+                    st.session_state[chat_key].append({
                         "user": user_query,
                         "bot": response,
                         "timestamp": time.time()
@@ -3242,7 +3238,8 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
 
         # Display chat messages
         with chat_container:
-            messages = st.session_state.get(f'chat_messages_{selected_dataset}', [])
+            chat_key = f'chat_messages_{selected_dataset}'
+            messages = st.session_state.get(chat_key, [])
             for message in messages:
                 st.markdown(f"""
                 <div class="chat-message user-message">
@@ -3256,14 +3253,8 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Show provenance if available
-                if 'provenance' in message and message['provenance']:
-                    with st.expander("📍 Data Sources"):
-                        for prov in message['provenance']:
-                            st.write(f"• {prov}")
-
     else:
-        st.info("🎯 Select an indexed dataset above to start asking questions!")
+        st.info("🎯 Select a dataset above to start asking questions!")
 
     # Clear chat history
     if st.button("🗑️ Clear Chat History"):
@@ -3273,32 +3264,19 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
         st.success("✅ Chat history cleared!")
         st.rerun()
 
-    # Sales Summary Generation
-    st.subheader("📊 AI-Generated Sales Summary")
-
-    if rag_system and rag_system.is_initialized:
-        if st.button("Generate Comprehensive Sales Summary", type="primary"):
-            with st.spinner("Generating sales summary using GPT-4o..."):
-                summary = rag_system.generate_sales_summary()
-
-                if summary and not summary.startswith("Error"):
-                    st.success("✅ Sales summary generated successfully!")
-
-                    # Display the summary in a nice format
-                    st.markdown("### 📈 Executive Sales Summary")
-                    st.markdown(summary)
-
-                    # Add download option
-                    st.download_button(
-                        label="📥 Download Summary",
-                        data=summary,
-                        file_name="sales_summary_report.txt",
-                        mime="text/plain"
-                    )
-                else:
-                    st.error(f"❌ Failed to generate summary: {summary}")
-    else:
-        st.info("Please initialize the AI assistant first by entering your API key.")
+    # Add OpenRouter API key input if not set
+    if not os.getenv("OPENROUTER_API_KEY"):
+        st.subheader("🔑 AI Configuration")
+        api_key = st.text_input(
+            "OpenRouter API Key (for AI responses)",
+            type="password",
+            help="Get your key from https://openrouter.ai/",
+            placeholder="sk-or-v1-..."
+        )
+        if api_key:
+            os.environ["OPENROUTER_API_KEY"] = api_key
+            st.success("✅ API key set! You can now ask questions.")
+            st.rerun()
 
     # Predefined insights
     st.subheader("🔍 Quick Insights")
