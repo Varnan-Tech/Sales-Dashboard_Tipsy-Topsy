@@ -1398,7 +1398,15 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
             if data_processor.load_and_process_data(uploaded_file):
 
                 # Auto-index data for RAG when loaded
-                if RAG_AVAILABLE and os.getenv("ENABLE_RAG", "false").lower() == "true":
+                # Enable RAG by default if packages are available, or if explicitly enabled
+                enable_rag = os.getenv("ENABLE_RAG", "auto").lower()
+                should_enable_rag = (enable_rag == "true") or (enable_rag == "auto" and RAG_AVAILABLE)
+
+                # Debug info
+                st.info(f"🔧 RAG_AVAILABLE: {RAG_AVAILABLE}, ENABLE_RAG: {enable_rag}, Should enable: {should_enable_rag}")
+
+                if should_enable_rag:
+                    st.info("🤖 Starting auto-indexing...")
                     with st.spinner("🤖 Auto-indexing data for AI analysis..."):
                         try:
                             # Import RAG components
@@ -3139,8 +3147,12 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
     """Create AI insights tab with auto-indexed RAG system"""
     st.markdown('<div class="section-header">🤖 AI-Powered Insights (Auto-RAG)</div>', unsafe_allow_html=True)
 
-    if not RAG_AVAILABLE:
-        st.warning("AI features require additional packages. Please install requirements.txt")
+    # Check if RAG should be enabled (same logic as sidebar)
+    enable_rag = os.getenv("ENABLE_RAG", "auto").lower()
+    should_enable_rag = (enable_rag == "true") or (enable_rag == "auto" and RAG_AVAILABLE)
+
+    if not should_enable_rag:
+        st.warning("🤖 RAG system is disabled. Set ENABLE_RAG=true or ENABLE_RAG=auto to enable AI features.")
         return
 
     # Check if data is loaded and indexed
@@ -3156,12 +3168,78 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
 
     if not indexed_datasets:
         st.info("📤 **No data indexed yet.** Upload a CSV/Excel file in the sidebar to automatically index it for AI analysis.")
+
+        # Manual indexing option as fallback
+        st.subheader("🔄 Manual Indexing (Fallback)")
+        manual_file = st.file_uploader(
+            "Upload file manually for indexing",
+            type=["csv", "xlsx", "xlsb"],
+            key="manual_rag_uploader"
+        )
+
+        if manual_file is not None and st.button("🔄 Manually Index This File", type="primary"):
+            with st.spinner("🔄 Manually indexing data..."):
+                try:
+                    # Import RAG components
+                    from app.rag.embeddings import Embeddings
+                    from app.rag.vector_store import get_vector_store
+                    from app.rag.indexer import iter_documents
+
+                    # Load the file
+                    file_extension = manual_file.name.split('.')[-1].lower()
+                    if file_extension == 'csv':
+                        df = pd.read_csv(manual_file)
+                    elif file_extension in ['xlsx', 'xlsb']:
+                        df = pd.read_excel(manual_file, engine='openpyxl' if file_extension == 'xlsx' else 'pyxlsb')
+                    else:
+                        st.error("❌ Unsupported format")
+                        st.stop()
+
+                    # Initialize RAG
+                    embedder = Embeddings()
+                    vector_store = get_vector_store()
+                    dataset_id = manual_file.name.replace('.', '_').replace(' ', '_')
+
+                    # Index data
+                    vector_store.create_collection(dataset_id)
+                    total_docs = 0
+                    start_time = time.time()
+
+                    for doc_id, doc_text, doc_metadata in iter_documents(dataset_id, df, manual_file.name):
+                        doc_vector = embedder.embed_batch([doc_text])[0]
+                        vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata])
+                        total_docs += 1
+
+                    elapsed = time.time() - start_time
+
+                    # Store in session state
+                    st.session_state[f'rag_embedder_{dataset_id}'] = embedder
+                    st.session_state[f'rag_vector_store_{dataset_id}'] = vector_store
+                    st.session_state[f'rag_dataset_info_{dataset_id}'] = {
+                        'name': manual_file.name,
+                        'rows': len(df),
+                        'columns': df.shape[1],
+                        'indexed_at': time.time(),
+                        'total_docs': total_docs
+                    }
+
+                    st.success(f"✅ Manually indexed {total_docs} documents in {elapsed:.1f}s")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Manual indexing failed: {e}")
+
         st.markdown("""
         ### How it works:
-        1. 📁 **Upload your data** in the left sidebar
-        2. 🤖 **Auto-indexing** happens automatically
+        1. 📁 **Upload your data** in the left sidebar (preferred)
+        2. 🤖 **Auto-indexing** should happen automatically
         3. 💬 **Ask questions** about your data here
         4. 🎯 **Get AI-powered answers** based on your actual data
+
+        ### If auto-indexing doesn't work:
+        - Use the manual indexing option above
+        - Check that ENABLE_RAG is set (default: auto)
+        - Ensure all RAG packages are installed
         """)
         return
 
