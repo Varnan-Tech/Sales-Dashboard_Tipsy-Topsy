@@ -7,23 +7,31 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 SYSTEM_PROMPT = (
-	"You are a data assistant. ONLY use the context below to answer the user. "
-	"If the answer cannot be inferred from the context, reply exactly: \"I don't know.\" "
-	"Include provenance lines for any factual claims (file name + row_index/row_range). Do not use world knowledge."
+	"You are a sales data analyst assistant. Analyze the provided sales transaction data and answer questions accurately. "
+	"ONLY use the context provided below to answer the user. If the answer cannot be inferred from the context, reply exactly: \"I don't know.\" "
+	"When providing numbers, include specific details like dates, amounts, products, and customer information from the data. "
+	"Include provenance information (file name + row reference) for any factual claims. "
+	"Focus on sales metrics, trends, customer behavior, product performance, and business insights. "
+	"Do not use external knowledge or make assumptions beyond what's in the provided data."
 )
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o-mini")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o")
 
 
-def assemble_context(hits: List[Dict], k: int = 3) -> Tuple[str, List[Dict]]:
+def assemble_context(hits: List[Dict], k: int = 8) -> Tuple[str, List[Dict]]:
 	selected = hits[:k]
 	ctx_lines = []
-	for h in selected:
+	for i, h in enumerate(selected):
 		m = h.get("metadata", {})
-		line = f"[{m.get('file_name','?')}:{m.get('row_index','?')}] {m}"  # keep small for now
+		content = h.get("content", "")  # Get the actual document content
+		score = h.get("score", 0.0)
+		line = f"--- DOCUMENT {i+1} (Relevance Score: {score:.3f}) ---\n"
+		line += f"Source: {m.get('file_name','?')} | Row: {m.get('row_index','?')}\n"
+		line += f"Data: {content}\n"
+		line += f"Reference: {m.get('file_name','?')}:row_{m.get('row_index','?')}\n"
 		ctx_lines.append(line)
-	return "\n".join(ctx_lines), selected
+	return "\n\n".join(ctx_lines), selected
 
 
 def call_openrouter(system_prompt: str, user_prompt: str, timeout_s: int = 30) -> str:
@@ -40,7 +48,7 @@ def call_openrouter(system_prompt: str, user_prompt: str, timeout_s: int = 30) -
 			{"role": "user", "content": user_prompt},
 		],
 		"temperature": 0.1,
-		"max_tokens": 600,
+		"max_tokens": 1500,
 	}
 	r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers, timeout=timeout_s)
 	r.raise_for_status()
@@ -48,10 +56,10 @@ def call_openrouter(system_prompt: str, user_prompt: str, timeout_s: int = 30) -
 	return j["choices"][0]["message"]["content"]
 
 
-def answer_query(vector_store, embeddings, dataset_id: str, query: str, top_k: int = 8) -> Dict:
+def answer_query(vector_store, embeddings, dataset_id: str, query: str, top_k: int = 10) -> Dict:
 	q_vec = embeddings.embed_batch([query])[0]
 	hits = vector_store.query(dataset_id, np.asarray(q_vec), top_k=top_k)
-	context, provenance = assemble_context(hits, k=3)
+	context, provenance = assemble_context(hits, k=8)
 	prompt = f"CONTEXT:\n{context}\n\nQUESTION: {query}\n\nAnswer:" 
 	start = time.time()
 	try:

@@ -44,21 +44,26 @@ class ChromaStore(VectorStore):
 			return
 		self._collections[dataset_id] = self._client.get_or_create_collection(dataset_id)
 
-	def upsert(self, dataset_id: str, ids: List[str], vectors: np.ndarray, metadatas: List[Dict]) -> None:
+	def upsert(self, dataset_id: str, ids: List[str], vectors: np.ndarray, metadatas: List[Dict], documents: Optional[List[str]] = None) -> None:
 		self.create_collection(dataset_id)
 		col = self._collections[dataset_id]
-		col.upsert(ids=ids, embeddings=vectors.tolist(), metadatas=metadatas)
+		# Extract documents from metadata if not provided separately
+		if documents is None:
+			documents = [meta.get("document", "") for meta in metadatas]
+		col.upsert(ids=ids, embeddings=vectors.tolist(), metadatas=metadatas, documents=documents)
 
 	def query(self, dataset_id: str, query_vector: np.ndarray, top_k: int = 8) -> List[Dict]:
 		self.create_collection(dataset_id)
 		col = self._collections[dataset_id]
-		res = col.query(query_embeddings=[query_vector.tolist()], n_results=top_k)
+		res = col.query(query_embeddings=[query_vector.tolist()], n_results=top_k, include=["documents", "metadatas", "distances"])
 		out: List[Dict] = []
 		for i in range(len(res["ids"][0])):
 			out.append({
 				"id": res["ids"][0][i],
 				"metadata": res["metadatas"][0][i],
+				"content": res["documents"][0][i] if "documents" in res else "",
 				"distance": res.get("distances", [[None]])[0][i],
+				"score": 1.0 - (res.get("distances", [[0]])[0][i] or 0) if res.get("distances") else 0.0,  # Convert distance to similarity score
 			})
 		return out
 

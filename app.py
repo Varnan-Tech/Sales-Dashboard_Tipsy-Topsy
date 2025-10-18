@@ -1386,6 +1386,22 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
     with st.sidebar:
         st.markdown('<div class="sidebar-header">📊 Dashboard Controls</div>', unsafe_allow_html=True)
 
+        # RAG Enable/Disable Toggle
+        st.subheader("🤖 AI Features")
+        enable_rag_sidebar = st.checkbox(
+            "Enable AI-Powered Analysis",
+            value=os.getenv("ENABLE_RAG", "auto").lower() in ["true", "auto"],
+            help="Enable AI chatbot and advanced data analysis features. When enabled, your data will be automatically indexed for AI queries."
+        )
+
+        # Override environment variable with user choice
+        if enable_rag_sidebar:
+            os.environ["ENABLE_RAG"] = "true"
+        else:
+            os.environ["ENABLE_RAG"] = "false"
+
+        st.divider()
+
         # File upload
         st.subheader("📁 Data Source")
         uploaded_file = st.file_uploader(
@@ -1402,10 +1418,18 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                 enable_rag = os.getenv("ENABLE_RAG", "auto").lower()
                 should_enable_rag = (enable_rag == "true") or (enable_rag == "auto" and RAG_AVAILABLE)
 
-                # Debug info
-                st.info(f"🔧 RAG_AVAILABLE: {RAG_AVAILABLE}, ENABLE_RAG: {enable_rag}, Should enable: {should_enable_rag}")
+                # Check if data is already indexed
+                dataset_id = uploaded_file.name.replace('.', '_').replace(' ', '_')
+                already_indexed = f'rag_dataset_info_{dataset_id}' in st.session_state
 
+                # Status info
                 if should_enable_rag:
+                    if already_indexed:
+                        st.success("✅ AI features enabled - Data already indexed")
+                    else:
+                        st.info("🤖 AI features enabled - Auto-indexing will start")
+
+                if should_enable_rag and not already_indexed:
                     st.info("🤖 Starting auto-indexing...")
                     with st.spinner("🤖 Auto-indexing data for AI analysis..."):
                         try:
@@ -1432,8 +1456,8 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                                 # Create embedding
                                 doc_vector = embedder.embed_batch([doc_text])[0]
 
-                                # Store in vector database
-                                vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata])
+                                # Store in vector database with documents
+                                vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata], [doc_text])
 
                                 total_docs += 1
 
@@ -1455,6 +1479,8 @@ def create_dashboard(data_processor: DataProcessor, rag_system: RAGSystem):
                         except Exception as e:
                             st.warning(f"⚠️ RAG auto-indexing failed: {e}")
                             st.info("💡 You can still use the dashboard normally. AI features may be limited.")
+                elif should_enable_rag and already_indexed:
+                    st.info("✅ Data already indexed for AI analysis. You can ask questions in the AI Insights tab.")
 
                 # Get valid date range for defaults (after data is loaded and parsed)
                 valid_dates = data_processor.df['Bill Date'].dropna() if hasattr(data_processor, 'df') and data_processor.df is not None else pd.Series()
@@ -3207,7 +3233,7 @@ def create_ai_insights(data_processor: DataProcessor, rag_system: RAGSystem):
 
                     for doc_id, doc_text, doc_metadata in iter_documents(dataset_id, df, manual_file.name):
                         doc_vector = embedder.embed_batch([doc_text])[0]
-                        vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata])
+                        vector_store.upsert(dataset_id, [doc_id], doc_vector.reshape(1, -1), [doc_metadata], [doc_text])
                         total_docs += 1
 
                     elapsed = time.time() - start_time
